@@ -1,0 +1,71 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2023-07-22 11:17:30.966239",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item",
+  "item_name",
+  "physical_qty",
+  "warehouse",
+  "date_time",
+  "count_by",
+  "name1"
+ ],
+ "fields": [
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "label": "Item",
+   "options": "Item"
+  },
+  {
+   "fetch_from": "item.item_name",
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name"
+  },
+  {
+   "fieldname": "physical_qty",
+   "fieldtype": "Float",
+   "label": "Physical Qty"
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "label": "warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "date_time",
+   "fieldtype": "Datetime",
+   "label": "Date Time"
+  },
+  {
+   "fieldname": "count_by",
+   "fieldtype": "Link",
+   "label": "Count By",
+   "options": "Employee"
+  },
+  {
+   "fetch_from": "count_by.employee_name",
+   "fieldname": "name1",
+   "fieldtype": "Data",
+   "label": "Inventory Done By"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2023-07-24 16:59:06.661239",
+ "modified_by": "Administrator",
+ "module": "Custom",
+ "name": "Physical Inventory Detail",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

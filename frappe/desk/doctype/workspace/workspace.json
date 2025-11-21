@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "field:label",
  "beta": 1,
@@ -111,8 +112,7 @@
   {
    "fieldname": "icon",
    "fieldtype": "Icon",
-   "label": "Icon",
-   "read_only": 1
+   "label": "Icon"
   },
   {
    "fieldname": "links",
@@ -121,20 +121,19 @@
    "options": "Workspace Link"
   },
   {
+   "allow_on_submit": 1,
    "default": "0",
    "fieldname": "public",
    "fieldtype": "Check",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Public",
-   "read_only": 1,
    "search_index": 1
   },
   {
    "fieldname": "title",
    "fieldtype": "Data",
    "label": "Title",
-   "read_only": 1,
    "reqd": 1
   },
   {
@@ -153,8 +152,7 @@
   {
    "fieldname": "sequence_id",
    "fieldtype": "Float",
-   "label": "Sequence Id",
-   "read_only": 1
+   "label": "Sequence Id"
   },
   {
    "fieldname": "roles",
@@ -196,9 +194,8 @@
    "options": "Workspace Number Card"
   }
  ],
- "in_create": 1,
  "links": [],
- "modified": "2023-04-11 14:34:24.829366",
+ "modified": "2023-11-27 13:36:17.151189",
  "modified_by": "Administrator",
  "module": "Desk",
  "name": "Workspace",
@@ -210,6 +207,7 @@
    "delete": 1,
    "email": 1,
    "export": 1,
+   "import": 1,
    "print": 1,
    "read": 1,
    "report": 1,
