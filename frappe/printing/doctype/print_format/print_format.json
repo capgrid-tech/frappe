@@ -195,7 +195,8 @@
    "fieldname": "format_data",
    "fieldtype": "Code",
    "hidden": 1,
-   "label": "Format Data"
+   "label": "Format Data",
+   "permlevel": 1
   },
   {
    "default": "0",
@@ -281,5 +282,6 @@
  ],
  "sort_field": "modified",
  "sort_order": "DESC",
+ "states": [],
  "track_changes": 1
 }

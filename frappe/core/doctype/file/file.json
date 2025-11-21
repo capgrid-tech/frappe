@@ -137,14 +137,12 @@
   {
    "fieldname": "attached_to_name",
    "fieldtype": "Data",
-   "label": "Attached To Name",
-   "read_only": 1
+   "label": "Attached To Name"
   },
   {
    "fieldname": "attached_to_field",
    "fieldtype": "Data",
-   "label": "Attached To Field",
-   "read_only": 1
+   "label": "Attached To Field"
   },
   {
    "fieldname": "old_parent",

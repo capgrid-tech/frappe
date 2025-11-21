@@ -102,6 +102,7 @@
    "default": "Standard",
    "fieldname": "website_theme",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Website Theme",
    "options": "Website Theme"
   },
@@ -333,7 +334,6 @@
   {
    "fieldname": "navbar_template_values",
    "fieldtype": "Code",
-   "hidden": 1,
    "label": "Navbar Template Values",
    "options": "JSON"
   },
@@ -352,7 +352,6 @@
   {
    "fieldname": "footer_template_values",
    "fieldtype": "Code",
-   "hidden": 1,
    "label": "Footer Template Values",
    "options": "JSON"
   },
@@ -426,7 +425,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2022-12-05 04:17:56.478757",
+ "modified": "2024-03-12 15:59:37.271105",
  "modified_by": "Administrator",
  "module": "Website",
  "name": "Website Settings",

@@ -29,37 +29,68 @@ PDF_CONTENT_ERRORS = [
 
 
 def get_pdf(html, options=None, output: PdfWriter | None = None):
+	import pdfkit
+	import requests
+	from bs4 import BeautifulSoup
+
 	html = scrub_urls(html)
 	html, options = prepare_options(html, options)
 
-	options.update({"disable-javascript": "", "disable-local-file-access": ""})
+	options.update({
+		"disable-javascript": "",
+		"enable-local-file-access": "",
+		"load-error-handling": "ignore",
+		"no-outline": None,
+		"print-media-type": "",
+		"disable-smart-shrinking": ""
+	})
 
-	filedata = ""
 	if LooseVersion(get_wkhtmltopdf_version()) > LooseVersion("0.12.3"):
 		options.update({"disable-smart-shrinking": ""})
 
+	# 🔍 Log all image <img src> URLs
 	try:
-		# Set filename property to false, so no file is actually created
+		soup = BeautifulSoup(html, "html.parser")
+		image_tags = soup.find_all("img")
+		broken_images = []
+
+		for img in image_tags:
+			src = img.get("src")
+			if src and src.startswith("http"):
+				try:
+					r = requests.head(src, timeout=3, allow_redirects=True)
+					code = r.status_code
+				except Exception as e:
+					code = f"Exception: {str(e)}"
+
+				if isinstance(code, int) and code >= 400 or not isinstance(code, int):
+					broken_images.append((src, code))
+
+		if broken_images:
+			with open("/tmp/broken_images.txt", "w") as f:
+				for img, reason in broken_images:
+					f.write(f"Broken image: {img} — {reason}\n")
+
+	except Exception as e:
+		with open("/tmp/failing_pdf_exception.txt", "w") as f:
+			f.write("Image parsing failed:\n" + str(e))
+
+	# 🔧 Try PDF render
+	try:
 		filedata = pdfkit.from_string(html, options=options or {}, verbose=True)
+	except Exception as e:
+		with open("/tmp/failing_pdf_dump.html", "w", encoding="utf-8") as f:
+			f.write(html)
+		with open("/tmp/failing_pdf_options.txt", "w", encoding="utf-8") as f:
+			f.write(str(options))
+		with open("/tmp/failing_pdf_exception.txt", "w") as f:
+			f.write("pdfkit crash:\n" + str(e))
+		frappe.throw(_("PDF generation failed due to wkhtmltopdf error. Logs are in /tmp/"))
 
-		# create in-memory binary streams from filedata and create a PdfReader object
-		reader = PdfReader(io.BytesIO(filedata))
-	except OSError as e:
-		if any([error in str(e) for error in PDF_CONTENT_ERRORS]):
-			if not filedata:
-				print(html, options)
-				frappe.throw(_("PDF generation failed because of broken image links"))
+	if not filedata:
+		frappe.throw(_("wkhtmltopdf returned empty PDF data."))
 
-			# allow pdfs with missing images if file got created
-			if output:
-				output.append_pages_from_reader(reader)
-		else:
-			raise
-	finally:
-		cleanup(options)
-
-	if "password" in options:
-		password = options["password"]
+	reader = PdfReader(io.BytesIO(filedata))
 
 	if output:
 		output.append_pages_from_reader(reader)
@@ -69,11 +100,9 @@ def get_pdf(html, options=None, output: PdfWriter | None = None):
 	writer.append_pages_from_reader(reader)
 
 	if "password" in options:
-		writer.encrypt(password)
+		writer.encrypt(options["password"])
 
-	filedata = get_file_data_from_writer(writer)
-
-	return filedata
+	return get_file_data_from_writer(writer)
 
 
 def get_file_data_from_writer(writer_obj):
@@ -320,3 +349,4 @@ def get_wkhtmltopdf_version():
 			pass
 
 	return wkhtmltopdf_version or "0"
+

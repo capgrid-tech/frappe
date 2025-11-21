@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "creation": "2020-09-07 12:48:48.334318",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -87,7 +88,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2023-04-24 15:14:32.054272",
+ "modified": "2023-12-21 14:10:29.693101",
  "modified_by": "Administrator",
  "module": "Core",
  "name": "Document Naming Rule",
@@ -98,6 +99,7 @@
    "delete": 1,
    "email": 1,
    "export": 1,
+   "import": 1,
    "print": 1,
    "read": 1,
    "report": 1,
