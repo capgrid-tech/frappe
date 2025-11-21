@@ -226,6 +226,9 @@ class BackupGenerator:
 		"""
 		Encrypt all the backups created using gpg.
 		"""
+		if which("gpg") is None:
+			click.secho("Please install `gpg` and ensure its available in your PATH", fg="red")
+			sys.exit(1)
 		paths = (self.backup_path_db, self.backup_path_files, self.backup_path_private_files)
 		for path in paths:
 			if os.path.exists(path):
@@ -280,13 +283,9 @@ class BackupGenerator:
 					return None
 				return file_path
 
-		latest_backups = {
-			file_type: get_latest(pattern) for file_type, pattern in file_type_slugs.items()
-		}
+		latest_backups = {file_type: get_latest(pattern) for file_type, pattern in file_type_slugs.items()}
 
-		recent_backups = {
-			file_type: old_enough(file_name) for file_type, file_name in latest_backups.items()
-		}
+		recent_backups = {file_type: old_enough(file_name) for file_type, file_name in latest_backups.items()}
 
 		return (
 			recent_backups.get("database"),
@@ -413,7 +412,9 @@ class BackupGenerator:
 
 		if self.db_type == "postgres":
 			if self.backup_includes:
-				args["include"] = " ".join([f"--table='public.\"{table}\"'" for table in self.backup_includes])
+				args["include"] = " ".join(
+					[f"--table='public.\"{table}\"'" for table in self.backup_includes]
+				)
 			elif self.backup_excludes:
 				args["exclude"] = " ".join(
 					[f"--exclude-table-data='public.\"{table}\"'" for table in self.backup_excludes]
@@ -469,7 +470,7 @@ class BackupGenerator:
 		db_backup_url = get_url(os.path.join("backups", os.path.basename(self.backup_path_db)))
 		files_backup_url = get_url(os.path.join("backups", os.path.basename(self.backup_path_files)))
 
-		msg = """Hello,
+		msg = f"""Hello,
 
 Your backups are ready to be downloaded.
 
@@ -477,10 +478,7 @@ Your backups are ready to be downloaded.
 2. [Click here to download the files backup]({files_backup_url})
 
 This link will be valid for 24 hours. A new backup will be available for
-download only after 24 hours.""".format(
-			db_backup_url=db_backup_url,
-			files_backup_url=files_backup_url,
-		)
+download only after 24 hours."""
 
 		datetime_str = datetime.fromtimestamp(os.stat(self.backup_path_db).st_ctime)
 		subject = datetime_str.strftime("%d/%m/%Y %H:%M:%S") + """ - Backup ready to be downloaded"""
@@ -661,6 +659,9 @@ class Backup:
 			print("Invalid path", self.file_path)
 			return
 		else:
+			if which("gpg") is None:
+				click.secho("Please install `gpg` and ensure its available in your PATH", fg="red")
+				sys.exit(1)
 			file_path_with_ext = self.file_path + ".gpg"
 			os.rename(self.file_path, file_path_with_ext)
 

@@ -76,7 +76,9 @@ frappe.ui.Capture = class {
 	show() {
 		this.build_dialog();
 
-		if (frappe.is_mobile()) {
+		if (cint(frappe.boot.sysdefaults.force_web_capture_mode_for_uploads)) {
+			this.show_for_desktop();
+		} else if (frappe.is_mobile()) {
 			this.show_for_mobile();
 		} else {
 			this.show_for_desktop();
@@ -98,13 +100,16 @@ frappe.ui.Capture = class {
 					fieldname: "total_count",
 				},
 			],
-			on_hide: this.stop_media_stream(),
+			on_hide: () => {
+				this.stop_media_stream();
+			},
 		});
 
 		me.$template = $(frappe.ui.Capture.TEMPLATE);
 
 		let field = me.dialog.get_field("capture");
 		$(field.wrapper).html(me.$template);
+		me.update_count();
 
 		me.dialog.get_close_btn().on("click", () => {
 			me.hide();
@@ -231,7 +236,7 @@ frappe.ui.Capture = class {
 
 	setup_remove_action() {
 		let me = this;
-		let elements = this.$template[0].getElementsByClassName("capture-remove-btn");
+		let elements = Array.from(this.$template[0].getElementsByClassName("capture-remove-btn"));
 
 		elements.forEach((el) => {
 			el.onclick = () => {

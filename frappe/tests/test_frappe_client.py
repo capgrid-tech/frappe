@@ -114,7 +114,9 @@ class TestFrappeClient(unittest.TestCase):
 		self.assertEqual(
 			server.get_value("Website Settings", "title_prefix").get("title_prefix"), "test-prefix"
 		)
-		frappe.db.set_value("Website Settings", None, "title_prefix", "")
+		frappe.db.rollback()  # Clear snapshot isolation
+		frappe.db.set_single_value("Website Settings", "title_prefix", "")
+		frappe.db.commit()
 
 	def test_update_doc(self):
 		server = FrappeClient(get_url(), "Administrator", self.PASSWORD, verify=False)
@@ -213,7 +215,7 @@ class TestFrappeClient(unittest.TestCase):
 		api_secret = "ksk&93nxoe3os"
 		header = {"Authorization": f"token {api_key}:{api_secret}"}
 		res = requests.post(get_url() + "/api/method/frappe.auth.get_logged_user", headers=header)
-		self.assertEqual(res.status_code, 403)
+		self.assertEqual(res.status_code, 401)
 
 		# random api key and api secret
 		api_key = "@3djdk3kld"

@@ -11,7 +11,7 @@ def setup_database(force, source_sql=None, verbose=False):
 	root_conn.sql(f"DROP USER IF EXISTS {frappe.conf.db_name}")
 	root_conn.sql(f"CREATE DATABASE `{frappe.conf.db_name}`")
 	root_conn.sql(f"CREATE user {frappe.conf.db_name} password '{frappe.conf.db_password}'")
-	root_conn.sql("GRANT ALL PRIVILEGES ON DATABASE `{0}` TO {0}".format(frappe.conf.db_name))
+	root_conn.sql(f"GRANT ALL PRIVILEGES ON DATABASE `{frappe.conf.db_name}` TO {frappe.conf.db_name}")
 	root_conn.close()
 
 	bootstrap_database(frappe.conf.db_name, verbose, source_sql=source_sql)
@@ -30,8 +30,8 @@ def bootstrap_database(db_name, verbose, source_sql=None):
 
 		secho(
 			"Table 'tabDefaultValue' missing in the restored site. "
-			"This may be due to incorrect permissions or the result of a restore from a bad backup file. "
-			"Database not installed correctly.",
+			"This happens when the backup fails to restore. Please check that the file is valid\n"
+			"Do go through the above output to check the exact error message from MariaDB",
 			fg="red",
 		)
 		sys.exit(1)
@@ -54,7 +54,7 @@ def import_db_from_sql(source_sql=None, verbose=False):
 
 	_command = (
 		f"psql {frappe.conf.db_name} "
-		f"-h {frappe.conf.db_host or 'localhost'} -p {str(frappe.conf.db_port or '5432')} "
+		f"-h {frappe.conf.db_host or 'localhost'} -p {frappe.conf.db_port or '5432'!s} "
 		f"-U {frappe.conf.db_name}"
 	)
 
@@ -70,9 +70,7 @@ def import_db_from_sql(source_sql=None, verbose=False):
 	restore_proc = run(command, env=subprocess_env, shell=True, stdout=PIPE)
 
 	if verbose:
-		print(
-			f"\nSTDOUT by psql:\n{restore_proc.stdout.decode()}\nImported from Database File: {source_sql}"
-		)
+		print(f"\nSTDOUT by psql:\n{restore_proc.stdout.decode()}\nImported from Database File: {source_sql}")
 
 
 def setup_help_database(help_db_name):
@@ -81,7 +79,7 @@ def setup_help_database(help_db_name):
 	root_conn.sql(f"DROP USER IF EXISTS {help_db_name}")
 	root_conn.sql(f"CREATE DATABASE `{help_db_name}`")
 	root_conn.sql(f"CREATE user {help_db_name} password '{help_db_name}'")
-	root_conn.sql("GRANT ALL PRIVILEGES ON DATABASE `{0}` TO {0}".format(help_db_name))
+	root_conn.sql(f"GRANT ALL PRIVILEGES ON DATABASE `{help_db_name}` TO {help_db_name}")
 
 
 def get_root_connection(root_login=None, root_password=None):
@@ -100,9 +98,7 @@ def get_root_connection(root_login=None, root_password=None):
 
 			root_password = getpass("Postgres super user password: ")
 
-		frappe.local.flags.root_connection = frappe.database.get_db(
-			user=root_login, password=root_password
-		)
+		frappe.local.flags.root_connection = frappe.database.get_db(user=root_login, password=root_password)
 
 	return frappe.local.flags.root_connection
 

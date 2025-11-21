@@ -92,9 +92,7 @@ def _new_site(
 		db_port=db_port,
 		no_mariadb_socket=no_mariadb_socket,
 	)
-	apps_to_install = (
-		["frappe"] + (frappe.conf.get("install_apps") or []) + (list(install_apps) or [])
-	)
+	apps_to_install = ["frappe"] + (frappe.conf.get("install_apps") or []) + (list(install_apps) or [])
 
 	for app in apps_to_install:
 		# NOTE: not using force here for 2 reasons:
@@ -212,7 +210,7 @@ def fetch_details_from_tag(_tag: str) -> tuple[str, str, str]:
 	try:
 		repo, tag = app_tag
 	except ValueError:
-		repo, tag = app_tag + [None]
+		repo, tag = [*app_tag, None]
 
 	try:
 		org, repo = org_repo
@@ -266,7 +264,7 @@ def install_app(name, verbose=False, set_as_patched=True, force=False):
 	if app_hooks.required_apps:
 		for app in app_hooks.required_apps:
 			required_app = parse_app_name(app)
-			install_app(required_app, verbose=verbose, force=force)
+			install_app(required_app, verbose=verbose)
 
 	frappe.flags.in_install = name
 	frappe.clear_cache()
@@ -288,6 +286,9 @@ def install_app(name, verbose=False, set_as_patched=True, force=False):
 		if out is False:
 			return
 
+	for fn in frappe.get_hooks("before_app_install"):
+		frappe.get_attr(fn)(name)
+
 	if name != "frappe":
 		add_module_defs(name, ignore_if_duplicate=force)
 
@@ -303,6 +304,9 @@ def install_app(name, verbose=False, set_as_patched=True, force=False):
 	for after_install in app_hooks.after_install or []:
 		frappe.get_attr(after_install)()
 
+	for fn in frappe.get_hooks("after_app_install"):
+		frappe.get_attr(fn)(name)
+
 	sync_jobs()
 	sync_fixtures(name)
 	sync_customizations(name)
@@ -311,6 +315,7 @@ def install_app(name, verbose=False, set_as_patched=True, force=False):
 	for after_sync in app_hooks.after_sync or []:
 		frappe.get_attr(after_sync)()  #
 
+	frappe.clear_cache()
 	frappe.flags.in_install = False
 
 
@@ -332,6 +337,8 @@ def remove_from_installed_apps(app_name):
 			"DefaultValue", {"defkey": "installed_apps"}, "defvalue", json.dumps(installed_apps)
 		)
 		_clear_cache("__global")
+		frappe.local.doc_events_hooks = None
+		frappe.get_single("Installed Applications").update_versions()
 		frappe.db.commit()
 		if frappe.flags.in_install:
 			post_install()
@@ -348,6 +355,14 @@ def remove_app(app_name, dry_run=False, yes=False, no_backup=False, force=False)
 		if app_name not in frappe.get_installed_apps():
 			click.secho(f"App {app_name} not installed on Site {site}", fg="yellow")
 			return
+
+	# Don't allow uninstalling if we have dependent apps installed
+	for app in frappe.get_installed_apps():
+		if app != app_name:
+			hooks = frappe.get_hooks(app_name=app)
+			if hooks.required_apps and any(app_name in required_app for required_app in hooks.required_apps):
+				click.secho(f"App {app_name} is a dependency of {app}. Uninstall {app} first.", fg="yellow")
+				return
 
 	print(f"Uninstalling App {app_name} from Site {site}...")
 
@@ -370,6 +385,9 @@ def remove_app(app_name, dry_run=False, yes=False, no_backup=False, force=False)
 	for before_uninstall in app_hooks.before_uninstall or []:
 		frappe.get_attr(before_uninstall)()
 
+	for fn in frappe.get_hooks("before_app_uninstall"):
+		frappe.get_attr(fn)(app_name)
+
 	modules = frappe.get_all("Module Def", filters={"app_name": app_name}, pluck="name")
 
 	drop_doctypes = _delete_modules(modules, dry_run=dry_run)
@@ -379,12 +397,19 @@ def remove_app(app_name, dry_run=False, yes=False, no_backup=False, force=False)
 		remove_from_installed_apps(app_name)
 		frappe.get_single("Installed Applications").update_versions()
 		frappe.db.commit()
+		frappe.clear_cache()
 
 	for after_uninstall in app_hooks.after_uninstall or []:
 		frappe.get_attr(after_uninstall)()
 
+	for fn in frappe.get_hooks("after_app_uninstall"):
+		frappe.get_attr(fn)(app_name)
+
 	click.secho(f"Uninstalled App {app_name} from Site {site}", fg="green")
 	frappe.flags.in_uninstall = False
+
+	if not dry_run:
+		frappe.clear_cache()
 
 
 def _delete_modules(modules: list[str], dry_run: bool) -> list[str]:
@@ -406,6 +431,7 @@ def _delete_modules(modules: list[str], dry_run: bool) -> list[str]:
 
 			if not dry_run:
 				if doctype.issingle:
+					frappe.delete_doc(doctype.name, doctype.name, ignore_on_trash=True, force=True)
 					frappe.delete_doc("DocType", doctype.name, ignore_on_trash=True)
 				else:
 					drop_doctypes.append(doctype.name)
@@ -419,10 +445,7 @@ def _delete_modules(modules: list[str], dry_run: bool) -> list[str]:
 	return drop_doctypes
 
 
-def _delete_linked_documents(
-	module_name: str, doctype_linkfield_map: dict[str, str], dry_run: bool
-) -> None:
-
+def _delete_linked_documents(module_name: str, doctype_linkfield_map: dict[str, str], dry_run: bool) -> None:
 	"""Deleted all records linked with module def"""
 	for doctype, fieldname in doctype_linkfield_map.items():
 		for record in frappe.get_all(doctype, filters={fieldname: module_name}, pluck="name"):
@@ -505,13 +528,9 @@ def init_singles():
 			continue
 
 
-def make_conf(
-	db_name=None, db_password=None, site_config=None, db_type=None, db_host=None, db_port=None
-):
+def make_conf(db_name=None, db_password=None, site_config=None, db_type=None, db_host=None, db_port=None):
 	site = frappe.local.site
-	make_site_config(
-		db_name, db_password, site_config, db_type=db_type, db_host=db_host, db_port=db_port
-	)
+	make_site_config(db_name, db_password, site_config, db_type=db_type, db_host=db_host, db_port=db_port)
 	sites_path = frappe.local.sites_path
 	frappe.destroy()
 	frappe.init(site, sites_path=sites_path)
@@ -653,7 +672,7 @@ def extract_sql_from_archive(sql_file_path):
 
 	sql_file_path = get_bench_relative_path(sql_file_path)
 	# Extract the gzip file if user has passed *.sql.gz file instead of *.sql file
-	if sql_file_path.endswith("sql.gz"):
+	if sql_file_path.endswith(".gz"):
 		decompressed_file_name = extract_sql_gzip(sql_file_path)
 	else:
 		decompressed_file_name = sql_file_path
@@ -767,40 +786,21 @@ def is_downgrade(sql_file_path, verbose=False):
 
 	from semantic_version import Version
 
-	head = "INSERT INTO `tabInstalled Application` VALUES"
-
 	with open(sql_file_path) as f:
-		for line in f:
-			if head in line:
-				# 'line' (str) format: ('2056588823','2020-05-11 18:21:31.488367','2020-06-12 11:49:31.079506','Administrator','Administrator',0,'Installed Applications','installed_applications','Installed Applications',1,'frappe','v10.1.71-74 (3c50d5e) (v10.x.x)','v10.x.x'),('855c640b8e','2020-05-11 18:21:31.488367','2020-06-12 11:49:31.079506','Administrator','Administrator',0,'Installed Applications','installed_applications','Installed Applications',2,'your_custom_app','0.0.1','master')
-				line = line.strip().lstrip(head).rstrip(";").strip()
-				app_rows = frappe.safe_eval(line)
-				# check if iterable consists of tuples before trying to transform
-				apps_list = (
-					app_rows
-					if all(isinstance(app_row, (tuple, list, set)) for app_row in app_rows)
-					else (app_rows,)
-				)
-				# 'all_apps' (list) format: [('frappe', '12.x.x-develop ()', 'develop'), ('your_custom_app', '0.0.1', 'master')]
-				all_apps = [x[-3:] for x in apps_list]
+		header = f.readline()
+		# Example first line:
+		# -- Backup generated by Frappe 15.1.0 on branch fix-backup-restore
 
-				for app in all_apps:
-					app_name = app[0]
-					app_version = app[1].split(" ", 1)[0]
+		if match := re.search(r"Frappe (\d+\.\d+\.\d+)", header):
+			backup_version = Version(match.group(1))
+			current_version = Version(frappe.__version__)
 
-					if app_name == "frappe":
-						try:
-							current_version = Version(frappe.__version__)
-							backup_version = Version(app_version[1:] if app_version[0] == "v" else app_version)
-						except ValueError:
-							return False
+			downgrade = backup_version > current_version
 
-						downgrade = backup_version > current_version
+			if verbose and downgrade:
+				print(f"Your site will be downgraded from Frappe {backup_version} to {current_version}")
 
-						if verbose and downgrade:
-							print(f"Your site will be downgraded from Frappe {backup_version} to {current_version}")
-
-						return downgrade
+			return downgrade
 
 
 def is_partial(sql_file_path):
@@ -826,7 +826,7 @@ def partial_restore(sql_file_path, verbose=False):
 			" partial restore operation for PostreSQL databases",
 			fg="yellow",
 		)
-		warnings.warn(warn)
+		warnings.warn(warn, stacklevel=1)
 
 	import_db_from_sql(source_sql=sql_file, verbose=verbose)
 

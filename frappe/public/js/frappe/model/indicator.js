@@ -23,7 +23,7 @@ frappe.has_indicator = function (doctype) {
 	return false;
 };
 
-frappe.get_indicator = function (doc, doctype) {
+frappe.get_indicator = function (doc, doctype, show_workflow_state) {
 	if (doc.__unsaved) {
 		return [__("Not Saved"), "orange"];
 	}
@@ -36,11 +36,18 @@ frappe.get_indicator = function (doc, doctype) {
 
 	var settings = frappe.listview_settings[doctype] || {};
 
-	var is_submittable = frappe.model.is_submittable(doctype),
-		workflow_fieldname = frappe.workflow.get_state_fieldname(doctype);
+	var is_submittable = frappe.model.is_submittable(doctype);
+	let workflow_fieldname = frappe.workflow.get_state_fieldname(doctype);
 
+	let avoid_status_override = (frappe.workflow.avoid_status_override[doctype] || []).includes(
+		doc[workflow_fieldname]
+	);
 	// workflow
-	if (workflow_fieldname && !without_workflow) {
+	if (
+		workflow_fieldname &&
+		(!without_workflow || show_workflow_state) &&
+		!avoid_status_override
+	) {
 		var value = doc[workflow_fieldname];
 		if (value) {
 			var colour = "";
@@ -90,7 +97,7 @@ frappe.get_indicator = function (doc, doctype) {
 
 	// based on status
 	if (doc.status) {
-		return [__(doc.status), frappe.utils.guess_colour(doc.status)];
+		return [__(doc.status), frappe.utils.guess_colour(doc.status), "status,=," + doc.status];
 	}
 
 	// based on enabled

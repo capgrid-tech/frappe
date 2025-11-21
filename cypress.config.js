@@ -8,9 +8,11 @@ module.exports = defineConfig({
 	pageLoadTimeout: 15000,
 	video: true,
 	videoUploadOnPasses: false,
+	viewportWidth: 1920,
+	viewportHeight: 1200,
 	retries: {
-		runMode: 2,
-		openMode: 2,
+		runMode: 1,
+		openMode: 1,
 	},
 	e2e: {
 		// We've imported your old cypress plugins here.
@@ -18,6 +20,7 @@ module.exports = defineConfig({
 		setupNodeEvents(on, config) {
 			return require("./cypress/plugins/index.js")(on, config);
 		},
+		testIsolation: false,
 		baseUrl: "http://test_site_ui:8000",
 		specPattern: ["./cypress/integration/*.js", "**/ui_test_*.js"],
 	},

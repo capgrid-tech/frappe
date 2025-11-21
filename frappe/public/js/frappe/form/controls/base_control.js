@@ -47,9 +47,6 @@ frappe.ui.form.Control = class BaseControl {
 		if (this.df.get_status) {
 			return this.df.get_status(this);
 		}
-		if (this.df.is_virtual) {
-			return "Read";
-		}
 
 		if (
 			(!this.doctype && !this.docname) ||
@@ -115,6 +112,11 @@ frappe.ui.form.Control = class BaseControl {
 		}
 
 		let value = frappe.model.get_value(this.doctype, this.docname, this.df.fieldname);
+
+		if (in_list(["Date", "Datetime"], this.df.fieldtype) && value) {
+			value = frappe.datetime.str_to_user(value);
+		}
+
 		value = this.get_parsed_value(value);
 
 		// hide if no value
@@ -123,7 +125,7 @@ frappe.ui.form.Control = class BaseControl {
 			status === "Read" &&
 			!this.only_input &&
 			is_null(value) &&
-			!in_list(["HTML", "Image", "Button"], this.df.fieldtype)
+			!in_list(["HTML", "Image", "Button", "Geolocation"], this.df.fieldtype)
 		) {
 			// eslint-disable-next-line
 			if (explain) console.log("By Hide Read-only, null fields: None"); // eslint-disable-line no-console

@@ -28,7 +28,17 @@ frappe.views.KanbanView = class KanbanView extends frappe.views.ListView {
 			if (!kanbans.length) {
 				return frappe.views.KanbanView.show_kanban_dialog(this.doctype, true);
 			} else if (kanbans.length && frappe.get_route().length !== 4) {
-				return frappe.views.KanbanView.show_kanban_dialog(this.doctype, true);
+				// Try to use the last board the user used, else default to the first available board
+				const last_board = frappe.get_user_settings(this.doctype)["Kanban"]
+					?.last_kanban_board;
+				if (last_board && kanbans.includes(last_board)) {
+					frappe.set_route("List", this.doctype, "Kanban", last_board);
+					return;
+				} else {
+					const first_board = kanbans[0];
+					frappe.set_route("List", this.doctype, "Kanban", first_board.name);
+					return;
+				}
 			} else {
 				this.kanbans = kanbans;
 
@@ -102,7 +112,7 @@ frappe.views.KanbanView = class KanbanView extends frappe.views.ListView {
 			this.menu_items.push({
 				label: __("Delete Kanban Board"),
 				action: () => {
-					frappe.confirm("Are you sure you want to proceed?", () => {
+					frappe.confirm(__("Are you sure you want to proceed?"), () => {
 						frappe.db.delete_doc("Kanban Board", this.board_name).then(() => {
 							frappe.show_alert(`Kanban Board ${this.board_name} deleted.`);
 							frappe.set_route("List", this.doctype, "List");
@@ -114,6 +124,10 @@ frappe.views.KanbanView = class KanbanView extends frappe.views.ListView {
 	}
 
 	setup_paging_area() {
+		// pass
+	}
+
+	set_result_height() {
 		// pass
 	}
 

@@ -34,7 +34,7 @@ frappe.data_import.ImportPreview = class ImportPreview {
 					<div class="col-sm-12">
 						<div class="table-actions margin-bottom">
 						</div>
-						<div class="table-preview border"></div>
+						<div class="table-preview"></div>
 						<div class="table-message"></div>
 					</div>
 				</div>
@@ -119,6 +119,10 @@ frappe.data_import.ImportPreview = class ImportPreview {
 			return row.map((cell) => {
 				if (cell == null) {
 					return "";
+				}
+
+				if (typeof cell === "string") {
+					cell = frappe.utils.xss_sanitise(cell);
 				}
 				return cell;
 			});

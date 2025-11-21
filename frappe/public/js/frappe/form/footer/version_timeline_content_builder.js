@@ -110,7 +110,7 @@ function get_version_timeline_content(version_doc, frm) {
 								frappe.meta.get_label(frm.fields_dict[row[0]].grid.doctype, p[0]),
 								format_content_for_timeline(p[1]),
 								format_content_for_timeline(p[2]),
-								row[1],
+								row[1] + 1,
 							])
 						);
 					}
@@ -174,6 +174,11 @@ function get_version_timeline_content(version_doc, frm) {
 		}
 	});
 
+	const audit_user = data.audit_user;
+	if (audit_user) {
+		const audit_msg = __("[Action taken by {0}]", [audit_user]);
+		out = out.map((message) => `${message} · ${audit_msg.bold()}`);
+	}
 	return out;
 }
 
@@ -224,6 +229,7 @@ function format_content_for_timeline(content) {
 	// limits content to 40 characters
 	// escapes HTML
 	// and makes it bold
+	content = frappe.utils.html2text(content);
 	content = frappe.ellipsis(content, 40) || '""';
 	content = frappe.utils.escape_html(content);
 	return content.bold();

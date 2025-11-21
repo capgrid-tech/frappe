@@ -113,7 +113,7 @@ frappe.ui.form.QuickEntryForm = class QuickEntryForm {
 			this.mandatory = [
 				{
 					fieldname: "__newname",
-					label: __("{0} Name", [this.meta.name]),
+					label: __("{0} Name", [__(this.meta.name)]),
 					reqd: 1,
 					fieldtype: "Data",
 				},
@@ -182,7 +182,11 @@ frappe.ui.form.QuickEntryForm = class QuickEntryForm {
 					doc: me.dialog.doc,
 				},
 				callback: function (r) {
-					if (frappe.model.is_submittable(me.doctype)) {
+					if (
+						r?.message?.docstatus === 0 &&
+						frappe.model.can_submit(me.doctype) &&
+						!frappe.model.has_workflow(me.doctype)
+					) {
 						frappe.run_serially([
 							() => (me.dialog.working = true),
 							() => {
@@ -276,6 +280,7 @@ frappe.ui.form.QuickEntryForm = class QuickEntryForm {
 				this.after_insert(frm);
 			};
 		}
+		this.doc.__run_link_triggers = false;
 		frappe.set_route("Form", this.doctype, this.doc.name);
 	}
 

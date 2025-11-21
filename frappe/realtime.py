@@ -16,20 +16,20 @@ def publish_progress(percent, title=None, doctype=None, docname=None, descriptio
 	publish_realtime(
 		"progress",
 		{"percent": percent, "title": title, "description": description},
-		user=frappe.session.user,
+		user=None if doctype and docname else frappe.session.user,
 		doctype=doctype,
 		docname=docname,
 	)
 
 
 def publish_realtime(
-	event: str = None,
-	message: dict = None,
-	room: str = None,
-	user: str = None,
-	doctype: str = None,
-	docname: str = None,
-	task_id: str = None,
+	event: str | None = None,
+	message: dict | None = None,
+	room: str | None = None,
+	user: str | None = None,
+	doctype: str | None = None,
+	docname: str | None = None,
+	task_id: str | None = None,
 	after_commit: bool = False,
 ):
 	"""Publish real-time updates
@@ -107,11 +107,7 @@ def can_subscribe_doc(doctype, docname):
 	if os.environ.get("CI"):
 		return True
 
-	from frappe.exceptions import PermissionError
-
-	if not frappe.has_permission(doctype=doctype, doc=docname, ptype="read"):
-		raise PermissionError()
-
+	frappe.has_permission(doctype, doc=docname, throw=True)
 	return True
 
 
@@ -129,7 +125,7 @@ def can_subscribe_doctype(doctype: str) -> bool:
 def get_user_info():
 	return {
 		"user": frappe.session.user,
-		"user_type": frappe.session.user_type,
+		"user_type": frappe.session.data.user_type,
 	}
 
 

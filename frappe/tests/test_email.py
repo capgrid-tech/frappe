@@ -5,10 +5,16 @@ import email
 import re
 from unittest.mock import patch
 
+import requests
+
 import frappe
+from frappe.core.doctype.communication.email import make
+from frappe.desk.form.load import get_attachments
 from frappe.email.doctype.email_account.test_email_account import TestEmailAccount
 from frappe.email.doctype.email_queue.email_queue import QueueBuilder
-from frappe.tests.utils import FrappeTestCase
+from frappe.query_builder.utils import db_type_is
+from frappe.tests.test_query_builder import run_only_if
+from frappe.tests.utils import FrappeTestCase, change_settings
 
 test_dependencies = ["Email Account"]
 
@@ -52,20 +58,16 @@ class TestEmail(FrappeTestCase):
 		self.test_email_queue(send_after=1)
 		from frappe.email.queue import flush
 
-		flush(from_test=True)
-		email_queue = frappe.db.sql(
-			"""select name from `tabEmail Queue` where status='Sent'""", as_dict=1
-		)
+		flush()
+		email_queue = frappe.db.sql("""select name from `tabEmail Queue` where status='Sent'""", as_dict=1)
 		self.assertEqual(len(email_queue), 0)
 
 	def test_flush(self):
 		self.test_email_queue()
 		from frappe.email.queue import flush
 
-		flush(from_test=True)
-		email_queue = frappe.db.sql(
-			"""select name from `tabEmail Queue` where status='Sent'""", as_dict=1
-		)
+		flush()
+		email_queue = frappe.db.sql("""select name from `tabEmail Queue` where status='Sent'""", as_dict=1)
 		self.assertEqual(len(email_queue), 1)
 		queue_recipients = [
 			r.recipient
@@ -117,7 +119,6 @@ class TestEmail(FrappeTestCase):
 		self.assertTrue("CC: test1@example.com" in message)
 
 	def test_cc_footer(self):
-		frappe.conf.use_ssl = True
 		# test if sending with cc's makes it into header
 		frappe.sendmail(
 			recipients=["test@example.com"],
@@ -131,9 +132,7 @@ class TestEmail(FrappeTestCase):
 			expose_recipients="footer",
 			now=True,
 		)
-		email_queue = frappe.db.sql(
-			"""select name from `tabEmail Queue` where status='Sent'""", as_dict=1
-		)
+		email_queue = frappe.db.sql("""select name from `tabEmail Queue` where status='Sent'""", as_dict=1)
 		self.assertEqual(len(email_queue), 1)
 		queue_recipients = [
 			r.recipient
@@ -151,12 +150,7 @@ class TestEmail(FrappeTestCase):
 			in frappe.safe_decode(frappe.flags.sent_mail)
 		)
 
-		# check for email tracker
-		self.assertTrue("mark_email_as_seen" in frappe.safe_decode(frappe.flags.sent_mail))
-		frappe.conf.use_ssl = False
-
 	def test_expose(self):
-
 		from frappe.utils.verified_command import verify_request
 
 		frappe.sendmail(
@@ -170,9 +164,7 @@ class TestEmail(FrappeTestCase):
 			unsubscribe_message="Unsubscribe",
 			now=True,
 		)
-		email_queue = frappe.db.sql(
-			"""select name from `tabEmail Queue` where status='Sent'""", as_dict=1
-		)
+		email_queue = frappe.db.sql("""select name from `tabEmail Queue` where status='Sent'""", as_dict=1)
 		self.assertEqual(len(email_queue), 1)
 		queue_recipients = [
 			r.recipient
@@ -213,9 +205,7 @@ class TestEmail(FrappeTestCase):
 
 		set_expiry_for_email_queue()
 
-		email_queue = frappe.db.sql(
-			"""select name from `tabEmail Queue` where status='Expired'""", as_dict=1
-		)
+		email_queue = frappe.db.sql("""select name from `tabEmail Queue` where status='Expired'""", as_dict=1)
 		self.assertEqual(len(email_queue), 1)
 		queue_recipients = [
 			r.recipient
@@ -348,3 +338,96 @@ class TestVerifiedRequests(FrappeTestCase):
 			set_request(method="GET", path="?" + signed_url)
 			self.assertTrue(verify_request())
 		frappe.local.request = None
+
+
+class TestEmailIntegrationTest(FrappeTestCase):
+	"""Sends email to local SMTP server and verifies correctness.
+
+	SMTP4Dev runs as a service in unit test CI job.
+	If you need to run this test locally, you must setup SMTP4dev locally.
+
+	WARNING: SMTP4dev doesn't have stable API, it can break anytime.
+	"""
+
+	SMTP4DEV_WEB = "http://localhost:3000"
+
+	def setUp(self) -> None:
+		# Frappe code is configured to not attempting sending emails during test.
+		frappe.flags.testing_email = True
+		requests.delete(f"{self.SMTP4DEV_WEB}/api/Messages/*")
+		return super().setUp()
+
+	def tearDown(self) -> None:
+		frappe.flags.testing_email = False
+		return super().tearDown()
+
+	@classmethod
+	def get_last_sent_emails(cls):
+		return requests.get(f"{cls.SMTP4DEV_WEB}/api/Messages").json().get("results")
+
+	@classmethod
+	def get_message(cls, message_id):
+		return requests.get(f"{cls.SMTP4DEV_WEB}/api/Messages/{message_id}").json()
+
+	def test_send_email(self):
+		sender = "a@example.io"
+		recipients = "b@example.io,c@example.io"
+		subject = "checking if email works"
+		content = "is email working?"
+
+		frappe.sendmail(sender=sender, recipients=recipients, subject=subject, content=content, now=True)
+		email = frappe.get_last_doc("Email Queue")
+		self.assertEqual(email.sender, sender)
+		self.assertEqual(len(email.recipients), 2)
+		self.assertEqual(email.status, "Sent")
+
+		sent_mails = self.get_last_sent_emails()
+		self.assertEqual(len(sent_mails), 2)
+
+		for sent_mail in sent_mails:
+			self.assertEqual(sent_mail["from"], sender)
+			self.assertEqual(sent_mail["subject"], subject)
+		self.assertSetEqual(set(recipients.split(",")), {m["to"][0] for m in sent_mails})
+
+	@run_only_if(db_type_is.MARIADB)
+	@change_settings("System Settings", store_attached_pdf_document=1)
+	def test_store_attachments(self):
+		""" "attach print" feature just tells email queue which document to attach, this is not
+		actually stored unless system setting says so."""
+
+		name = make(
+			sender="test_sender@example.com",
+			recipients="test_recipient@example.com,test_recipient2@example.com",
+			content="test mail 001",
+			subject="test-mail-002",
+			doctype="Email Account",
+			name="_Test Email Account 1",
+			print_format="Standard",
+			send_email=True,
+			now=True,
+		).get("name")
+
+		communication = frappe.get_doc("Communication", name)
+
+		attachments = get_attachments(communication.doctype, communication.name)
+		self.assertEqual(len(attachments), 1)
+
+		file = frappe.get_doc("File", attachments[0].name)
+		self.assertGreater(file.file_size, 1000)
+		self.assertIn("pdf", file.file_name.lower())
+		sent_mails = self.get_last_sent_emails()
+		self.assertEqual(len(sent_mails), 2)
+
+		for mail in sent_mails:
+			email_content = self.get_message(mail["id"])
+
+			attachment_found = False
+			for part in email_content["parts"]:
+				for child_part in part["childParts"]:
+					if child_part["isAttachment"]:
+						attachment_found = True
+						self.assertIn("pdf", child_part["name"])
+						break
+
+			if not attachment_found:
+				self.fail("Attachment not found", email_content)

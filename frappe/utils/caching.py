@@ -3,9 +3,9 @@
 
 import json
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from functools import wraps
-from typing import Callable
 
 import frappe
 
@@ -85,7 +85,7 @@ def site_cache(ttl: int | None = None, maxsize: int | None = None) -> Callable:
 	        calculate_pi(10) # will calculate value
 	"""
 
-	def time_cache_wrapper(func: Callable = None) -> Callable:
+	def time_cache_wrapper(func: Callable | None = None) -> Callable:
 		func_key = f"{func.__module__}.{func.__name__}"
 
 		def clear_cache():
@@ -128,3 +128,38 @@ def site_cache(ttl: int | None = None, maxsize: int | None = None) -> Callable:
 		return time_cache_wrapper(ttl)
 
 	return time_cache_wrapper
+
+
+def redis_cache(ttl: int | None = 3600, user: str | bool | None = None, shared: bool = False) -> Callable:
+	"""Decorator to cache method calls and its return values in Redis
+
+	args:
+	        ttl: time to expiry in seconds, defaults to 1 hour
+	        user: `true` should cache be specific to session user.
+	        shared: `true` should cache be shared across sites
+	"""
+
+	def wrapper(func: Callable | None = None) -> Callable:
+		func_key = f"{func.__module__}.{func.__qualname__}"
+
+		def clear_cache():
+			frappe.cache().delete_keys(func_key)
+
+		func.clear_cache = clear_cache
+		func.ttl = ttl if not callable(ttl) else 3600
+
+		@wraps(func)
+		def redis_cache_wrapper(*args, **kwargs):
+			func_call_key = func_key + "::" + str(__generate_request_cache_key(args, kwargs))
+			if frappe.cache().exists(func_call_key, user=user, shared=shared):
+				return frappe.cache().get_value(func_call_key, user=user, shared=shared)
+			val = func(*args, **kwargs)
+			ttl = getattr(func, "ttl", 3600)
+			frappe.cache().set_value(func_call_key, val, expires_in_sec=ttl, user=user, shared=shared)
+			return val
+
+		return redis_cache_wrapper
+
+	if callable(ttl):
+		return wrapper(ttl)
+	return wrapper

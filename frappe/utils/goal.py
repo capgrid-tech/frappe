@@ -24,10 +24,14 @@ def get_monthly_results(
 	date_format = "%m-%Y" if frappe.db.db_type != "postgres" else "MM-YYYY"
 
 	return dict(
-		frappe.qb.engine.build_conditions(table=goal_doctype, filters=filters)
-		.select(
-			DateFormat(Table[date_col], date_format).as_("month_year"),
-			Function(aggregation, goal_field),
+		frappe.qb.get_query(
+			table=goal_doctype,
+			fields=[
+				DateFormat(Table[date_col], date_format).as_("month_year"),
+				Function(aggregation, goal_field),
+			],
+			filters=filters,
+			validate_filters=True,
 		)
 		.groupby("month_year")
 		.run()
@@ -46,7 +50,7 @@ def get_monthly_goal_graph_data(
 	goal_doctype_link: str,
 	goal_field: str,
 	date_field: str,
-	filter_str: str = None,
+	filter_str: str | None = None,
 	aggregation: str = "sum",
 	filters: dict | None = None,
 ) -> dict:

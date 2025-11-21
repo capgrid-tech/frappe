@@ -118,11 +118,10 @@ class TestReport(FrappeTestCase):
 					}
 				]
 			),
+			json.dumps({"user": "Administrator", "doctype": "User"}),
 		)
 		custom_report = frappe.get_doc("Report", custom_report_name)
-		columns, result = custom_report.run_query_report(
-			filters={"user": "Administrator", "doctype": "User"}, user=frappe.session.user
-		)
+		columns, result = custom_report.run_query_report(user=frappe.session.user)
 
 		self.assertListEqual(["email"], [column.get("fieldname") for column in columns])
 		admin_dict = frappe.core.utils.find(result, lambda d: d["name"] == "Administrator")
@@ -152,9 +151,7 @@ class TestReport(FrappeTestCase):
 		)
 		result = response.get("result")
 		columns = response.get("columns")
-		self.assertListEqual(
-			["name", "email", "user_type"], [column.get("fieldname") for column in columns]
-		)
+		self.assertListEqual(["name", "email", "user_type"], [column.get("fieldname") for column in columns])
 		admin_dict = frappe.core.utils.find(result, lambda d: d["name"] == "Administrator")
 		self.assertDictEqual(
 			{"name": "Administrator", "user_type": "System User", "email": "admin@example.com"}, admin_dict
@@ -165,9 +162,7 @@ class TestReport(FrappeTestCase):
 		frappe.db.delete("Has Role", {"parent": frappe.session.user, "role": "Test Has Role"})
 		frappe.db.commit()
 		if not frappe.db.exists("Role", "Test Has Role"):
-			role = frappe.get_doc({"doctype": "Role", "role_name": "Test Has Role"}).insert(
-				ignore_permissions=True
-			)
+			frappe.get_doc({"doctype": "Role", "role_name": "Test Has Role"}).insert(ignore_permissions=True)
 
 		if not frappe.db.exists("Report", "Test Report"):
 			report = frappe.get_doc(
@@ -222,9 +217,7 @@ class TestReport(FrappeTestCase):
 	def test_format_method(self):
 		if frappe.db.exists("Report", "User Activity Report Without Sort"):
 			frappe.delete_doc("Report", "User Activity Report Without Sort")
-		with open(
-			os.path.join(os.path.dirname(__file__), "user_activity_report_without_sort.json")
-		) as f:
+		with open(os.path.join(os.path.dirname(__file__), "user_activity_report_without_sort.json")) as f:
 			frappe.get_doc(json.loads(f.read())).insert()
 
 		report = frappe.get_doc("Report", "User Activity Report Without Sort")

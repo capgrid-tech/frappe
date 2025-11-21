@@ -72,9 +72,7 @@ class Workspace:
 		"""Returns true if Has Role is not set or the user is allowed."""
 		from frappe.utils import has_common
 
-		allowed = [
-			d.role for d in frappe.get_all("Has Role", fields=["role"], filters={"parent": self.doc.name})
-		]
+		allowed = [d.role for d in self.doc.roles]
 
 		custom_roles = get_custom_allowed_roles("page", self.doc.name)
 		allowed.extend(custom_roles)
@@ -91,7 +89,7 @@ class Workspace:
 		_cache = frappe.cache()
 
 		value = _cache.get_value(cache_key, user=frappe.session.user)
-		if value:
+		if value is not None:
 			return value
 
 		value = fallback_fn()
@@ -153,6 +151,8 @@ class Workspace:
 			return True
 		if item_type == "dashboard":
 			return True
+		if item_type == "url":
+			return True
 
 		return False
 
@@ -163,6 +163,7 @@ class Workspace:
 		self.onboardings = {"items": self.get_onboardings()}
 		self.quick_lists = {"items": self.get_quick_lists()}
 		self.number_cards = {"items": self.get_number_cards()}
+		self.custom_blocks = {"items": self.get_custom_blocks()}
 
 	def _doctype_contains_a_record(self, name):
 		exists = self.table_counts.get(name, False)
@@ -178,7 +179,6 @@ class Workspace:
 
 	def _prepare_item(self, item):
 		if item.dependencies:
-
 			dependencies = [dep.strip() for dep in item.dependencies.split(",")]
 
 			incomplete_dependencies = [d for d in dependencies if not self._doctype_contains_a_record(d)]
@@ -200,6 +200,23 @@ class Workspace:
 		item["label"] = _(item.label) if item.label else _(item.name)
 
 		return item
+
+	def is_custom_block_permitted(self, custom_block_name):
+		from frappe.utils import has_common
+
+		allowed = [
+			d.role for d in frappe.get_all("Has Role", fields=["role"], filters={"parent": custom_block_name})
+		]
+
+		if not allowed:
+			return True
+
+		roles = frappe.get_roles()
+
+		if has_common(roles, allowed):
+			return True
+
+		return False
 
 	@handle_not_exist
 	def get_links(self):
@@ -344,6 +361,25 @@ class Workspace:
 
 		return all_number_cards
 
+	@handle_not_exist
+	def get_custom_blocks(self):
+		all_custom_blocks = []
+		if frappe.has_permission("Custom HTML Block", throw=False):
+			custom_blocks = self.doc.custom_blocks
+
+			for custom_block in custom_blocks:
+				if frappe.has_permission("Custom HTML Block", doc=custom_block.custom_block_name):
+					if not self.is_custom_block_permitted(custom_block.custom_block_name):
+						continue
+
+					# Translate label
+					custom_block.label = (
+						_(custom_block.label) if custom_block.label else _(custom_block.custom_block_name)
+					)
+					all_custom_blocks.append(custom_block)
+
+		return all_custom_blocks
+
 
 @frappe.whitelist()
 @frappe.read_only()
@@ -367,6 +403,7 @@ def get_desktop_page(page):
 			"onboardings": workspace.onboardings,
 			"quick_lists": workspace.quick_lists,
 			"number_cards": workspace.number_cards,
+			"custom_blocks": workspace.custom_blocks,
 		}
 	except DoesNotExistError:
 		frappe.log_error("Workspace Missing")
@@ -382,8 +419,11 @@ def get_workspace_sidebar_items():
 	blocked_modules = frappe.get_doc("User", frappe.session.user).get_blocked_modules()
 	blocked_modules.append("Dummy Module")
 
+	# adding None to allowed_domains to include pages without domain restriction
+	allowed_domains = [None, *frappe.get_active_domains()]
+
 	filters = {
-		"restrict_to_domain": ["in", frappe.get_active_domains()],
+		"restrict_to_domain": ["in", allowed_domains],
 		"module": ["not in", blocked_modules],
 	}
 
@@ -414,7 +454,7 @@ def get_workspace_sidebar_items():
 		try:
 			workspace = Workspace(page, True)
 			if has_access or workspace.is_permitted():
-				if page.public and (has_access or not page.is_hidden):
+				if page.public and (has_access or not page.is_hidden) and page.title != "Welcome Workspace":
 					pages.append(page)
 				elif page.for_user == frappe.session.user:
 					private_pages.append(page)
@@ -423,6 +463,10 @@ def get_workspace_sidebar_items():
 			pass
 	if private_pages:
 		pages.extend(private_pages)
+
+	if len(pages) == 0:
+		pages = [frappe.get_doc("Workspace", "Welcome Workspace").as_dict()]
+		pages[0]["label"] = _("Welcome Workspace")
 
 	return {"pages": pages, "has_access": has_access}
 
@@ -495,10 +539,12 @@ def save_new_widget(doc, page, blocks, new_widgets):
 			doc.shortcuts.extend(new_widget(widgets.shortcut, "Workspace Shortcut", "shortcuts"))
 		if widgets.quick_list:
 			doc.quick_lists.extend(new_widget(widgets.quick_list, "Workspace Quick List", "quick_lists"))
-		if widgets.number_card:
-			doc.number_cards.extend(
-				new_widget(widgets.number_card, "Workspace Number Card", "number_cards")
+		if widgets.custom_block:
+			doc.custom_blocks.extend(
+				new_widget(widgets.custom_block, "Workspace Custom Block", "custom_blocks")
 			)
+		if widgets.number_card:
+			doc.number_cards.extend(new_widget(widgets.number_card, "Workspace Number Card", "number_cards"))
 		if widgets.card:
 			doc.build_links_table_from_card(widgets.card)
 
@@ -512,13 +558,11 @@ def save_new_widget(doc, page, blocks, new_widgets):
 		json_config = widgets and dumps(widgets, sort_keys=True, indent=4)
 
 		# Error log body
-		log = """
-		page: {}
-		config: {}
-		exception: {}
-		""".format(
-			page, json_config, e
-		)
+		log = f"""
+		page: {page}
+		config: {json_config}
+		exception: {e}
+		"""
 		doc.log_error("Could not save customization", log)
 		return False
 
@@ -528,12 +572,12 @@ def save_new_widget(doc, page, blocks, new_widgets):
 def clean_up(original_page, blocks):
 	page_widgets = {}
 
-	for wid in ["shortcut", "card", "chart", "quick_list", "number_card"]:
+	for wid in ["shortcut", "card", "chart", "quick_list", "number_card", "custom_block"]:
 		# get list of widget's name from blocks
 		page_widgets[wid] = [x["data"][wid + "_name"] for x in loads(blocks) if x["type"] == wid]
 
-	# shortcut, chart, quick_list & number_card cleanup
-	for wid in ["shortcut", "chart", "quick_list", "number_card"]:
+	# shortcut, chart, quick_list, number_card & custom_block cleanup
+	for wid in ["shortcut", "chart", "quick_list", "number_card", "custom_block"]:
 		updated_widgets = []
 		original_page.get(wid + "s").reverse()
 
@@ -615,4 +659,8 @@ def update_onboarding_step(name, field, value):
 	        value: Value to be updated
 
 	"""
+	from frappe.utils.telemetry import capture
+
 	frappe.db.set_value("Onboarding Step", name, field, value)
+
+	capture(frappe.scrub(name), app="frappe_onboarding", properties={field: value})

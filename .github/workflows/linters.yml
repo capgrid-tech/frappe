@@ -53,7 +53,7 @@ jobs:
           python $GITHUB_WORKSPACE/.github/helper/documentation.py $PR_NUMBER
 
   linter:
-    name: 'Frappe Linter'
+    name: 'Semgrep Rules'
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
 
@@ -62,14 +62,14 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - uses: pre-commit/action@v3.0.0
+          cache: pip
 
       - name: Download Semgrep rules
         run: git clone --depth 1 https://github.com/frappe/semgrep-rules.git frappe-semgrep-rules
 
       - name: Run Semgrep rules
         run: |
-          pip install semgrep==0.97.0
+          pip install semgrep
           semgrep ci --config ./frappe-semgrep-rules/rules --config r/python.lang.correctness
 
   deps-vulnerable-check:
@@ -95,5 +95,4 @@ jobs:
       - run: |
           pip install pip-audit
           cd ${GITHUB_WORKSPACE}
-          sed -i '/dropbox/d' pyproject.toml   # Remove dropbox temporarily https://github.com/dropbox/dropbox-sdk-python/pull/456
-          pip-audit .
+          pip-audit --desc on --ignore-vuln GHSA-4xqq-73wg-5mjp --ignore-vuln GHSA-2g68-c3qc-8985 .

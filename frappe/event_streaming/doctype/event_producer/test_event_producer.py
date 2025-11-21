@@ -114,9 +114,7 @@ class TestEventProducer(FrappeTestCase):
 		producer_doc = insert_into_producer(producer, "test different name sync")
 		self.pull_producer_data()
 		self.assertTrue(
-			frappe.db.exists(
-				"ToDo", {"remote_docname": producer_doc.name, "remote_site_name": producer_url}
-			)
+			frappe.db.exists("ToDo", {"remote_docname": producer_doc.name, "remote_site_name": producer_url})
 		)
 
 		reset_configuration(producer_url)
@@ -126,7 +124,7 @@ class TestEventProducer(FrappeTestCase):
 
 		# Add Condition
 		event_producer = frappe.get_doc("Event Producer", producer_url)
-		note_producer_entry = [x for x in event_producer.producer_doctypes if x.ref_doctype == "Note"][0]
+		note_producer_entry = next(x for x in event_producer.producer_doctypes if x.ref_doctype == "Note")
 		note_producer_entry.condition = "doc.public == 1"
 		event_producer.save()
 
@@ -162,7 +160,7 @@ class TestEventProducer(FrappeTestCase):
 
 		# Add Condition
 		event_producer = frappe.get_doc("Event Producer", producer_url)
-		note_producer_entry = [x for x in event_producer.producer_doctypes if x.ref_doctype == "Note"][0]
+		note_producer_entry = next(x for x in event_producer.producer_doctypes if x.ref_doctype == "Note")
 		note_producer_entry.condition = (
 			"cmd: frappe.event_streaming.doctype.event_producer.test_event_producer.can_sync_note"
 		)

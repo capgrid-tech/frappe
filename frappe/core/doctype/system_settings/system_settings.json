@@ -18,6 +18,7 @@
   "date_format",
   "time_format",
   "number_format",
+  "use_number_format_from_currency",
   "first_day_of_the_week",
   "column_break_7",
   "float_precision",
@@ -33,6 +34,7 @@
   "apply_strict_user_permissions",
   "column_break_21",
   "allow_guests_to_upload_files",
+  "force_web_capture_mode_for_uploads",
   "security",
   "session_expiry",
   "session_expiry_mobile",
@@ -42,6 +44,9 @@
   "allow_login_using_mobile_number",
   "allow_login_using_user_name",
   "disable_user_pass_login",
+  "login_with_email_link",
+  "login_with_email_link_expiry",
+  "rate_limit_email_link_login",
   "allow_error_traceback",
   "strip_exif_metadata_from_uploaded_images",
   "allow_older_web_view_links",
@@ -72,14 +77,19 @@
   "disable_standard_email_footer",
   "hide_footer_in_auto_email_reports",
   "attach_view_link",
+  "store_attached_pdf_document",
   "prepared_report_section",
-  "enable_prepared_report_auto_deletion",
-  "prepared_report_expiry_period",
-  "column_break_64",
   "max_auto_email_report_per_user",
+  "delete_background_exported_reports_after",
   "system_updates_section",
   "disable_system_update_notification",
-  "disable_change_log_notification"
+  "disable_change_log_notification",
+  "max_report_rows",
+  "telemetry_section",
+  "enable_telemetry",
+  "files_section",
+  "max_file_size",
+  "column_break_uqma"
  ],
  "fields": [
   {
@@ -211,7 +221,7 @@
    "label": "Security"
   },
   {
-   "default": "24:00",
+   "default": "60:00",
    "description": "Example: Setting this to 24:00 will log out a user if they are not active for 24:00 hours.",
    "fieldname": "session_expiry",
    "fieldtype": "Data",
@@ -293,6 +303,7 @@
    "label": "Brute Force Security"
   },
   {
+   "default": "10",
    "fieldname": "allow_consecutive_login_attempts",
    "fieldtype": "Int",
    "label": "Allow Consecutive Login Attempts "
@@ -427,21 +438,7 @@
    "default": "1",
    "fieldname": "attach_view_link",
    "fieldtype": "Check",
-   "label": "Send document Web View link in email"
-  },
-  {
-   "default": "30",
-   "depends_on": "enable_prepared_report_auto_deletion",
-   "description": "System will auto-delete Prepared Reports permanently after these many days since creation",
-   "fieldname": "prepared_report_expiry_period",
-   "fieldtype": "Int",
-   "label": "Prepared Report Expiry Period (Days)"
-  },
-  {
-   "default": "1",
-   "fieldname": "enable_prepared_report_auto_deletion",
-   "fieldtype": "Check",
-   "label": "Enable Auto-deletion of Prepared Reports"
+   "label": "Include Web View Link in Email"
   },
   {
    "collapsible": 1,
@@ -502,10 +499,6 @@
    "label": "Allow Older Web View Links (Insecure)"
   },
   {
-   "fieldname": "column_break_64",
-   "fieldtype": "Column Break"
-  },
-  {
    "default": "20",
    "fieldname": "max_auto_email_report_per_user",
    "fieldtype": "Int",
@@ -555,12 +548,96 @@
    "fieldname": "disable_document_sharing",
    "fieldtype": "Check",
    "label": "Disable Document Sharing"
+  },
+  {
+   "default": "0",
+   "description": "Allow users to log in without a password, using a login link sent to their email",
+   "fieldname": "login_with_email_link",
+   "fieldtype": "Check",
+   "label": "Login with email link"
+  },
+  {
+   "default": "10",
+   "depends_on": "login_with_email_link",
+   "fieldname": "login_with_email_link_expiry",
+   "fieldtype": "Int",
+   "label": "Login with email link expiry (in minutes)"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "telemetry_section",
+   "fieldtype": "Section Break",
+   "label": "Telemetry"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_telemetry",
+   "fieldtype": "Check",
+   "label": "Allow Sending Usage Data for Improving Applications"
+  },
+  {
+   "default": "0",
+   "description": "When uploading files, force the use of the web-based image capture. If this is unchecked, the default behavior is to use the mobile native camera when use from a mobile is detected.",
+   "fieldname": "force_web_capture_mode_for_uploads",
+   "fieldtype": "Check",
+   "label": "Force Web Capture Mode for Uploads"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "files_section",
+   "fieldtype": "Section Break",
+   "label": "Files"
+  },
+  {
+   "fieldname": "max_file_size",
+   "fieldtype": "Int",
+   "label": "Max File Size (MB)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "column_break_uqma",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "When sending document using email, store the PDF on Communication. Warning: This can increase your storage usage.",
+   "fieldname": "store_attached_pdf_document",
+   "fieldtype": "Check",
+   "label": "Store Attached PDF Document"
+  },
+  {
+   "depends_on": "login_with_email_link",
+   "description": "You can set a high value here if multiple users will be logging in from the same network.",
+   "fieldname": "rate_limit_email_link_login",
+   "fieldtype": "Int",
+   "label": "Rate limit for email link login"
+  },
+  {
+   "default": "0",
+   "fieldname": "use_number_format_from_currency",
+   "fieldtype": "Check",
+   "label": "Use Number Format from Currency"
+  },
+  {
+   "default": "100000",
+   "description": "This value specifies the max number of rows that can be rendered in report view. ",
+   "fieldname": "max_report_rows",
+   "fieldtype": "Int",
+   "label": "Max Report Rows"
+  },
+  {
+   "default": "48",
+   "description": "Defines how long exported reports sent via email are kept in the system. Older files will be automatically deleted.",
+   "fieldname": "delete_background_exported_reports_after",
+   "fieldtype": "Int",
+   "label": "Delete Background Exported Reports After (Hours)",
+   "non_negative": 1
   }
  ],
  "icon": "fa fa-cog",
  "issingle": 1,
  "links": [],
- "modified": "2023-03-14 11:30:56.465653",
+ "modified": "2025-05-19 14:17:40.748786",
  "modified_by": "Administrator",
  "module": "Core",
  "name": "System Settings",

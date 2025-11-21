@@ -34,7 +34,7 @@ context("Web Form", () => {
 
 		cy.url().should("include", "/note/new");
 
-		cy.request("/api/method/logout");
+		cy.call("logout");
 		cy.visit("/note");
 
 		cy.url().should("include", "/note/new");
@@ -49,6 +49,7 @@ context("Web Form", () => {
 	});
 
 	it("Login Required", () => {
+		cy.call("logout");
 		cy.login("Administrator");
 		cy.visit("/app/web-form/note");
 
@@ -136,29 +137,6 @@ context("Web Form", () => {
 		cy.get(".web-list-table thead th").contains("Title");
 		cy.get(".web-list-table thead th").contains("Public");
 		cy.get(".web-list-table thead th").contains("Content");
-	});
-
-	it("Breadcrumbs", () => {
-		cy.visit("/note/Note 1");
-		cy.get(".breadcrumb-container .breadcrumb .breadcrumb-item:first a")
-			.should("contain.text", "Note")
-			.click();
-		cy.url().should("include", "/note/list");
-	});
-
-	it("Custom Breadcrumbs", () => {
-		cy.visit("/app/web-form/note");
-
-		cy.findByRole("tab", { name: "Customization" }).click();
-		cy.fill_field("breadcrumbs", '[{"label": _("Notes"), "route":"note"}]', "Code");
-		cy.get(".form-tabs .nav-item .nav-link").contains("Customization").click();
-		cy.save();
-
-		cy.visit("/note/Note 1");
-		cy.get(".breadcrumb-container .breadcrumb .breadcrumb-item:first a").should(
-			"contain.text",
-			"Notes"
-		);
 	});
 
 	it("Read Only", () => {

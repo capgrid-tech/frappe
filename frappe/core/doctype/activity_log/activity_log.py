@@ -6,17 +6,18 @@ from frappe.core.utils import set_timeline_doc
 from frappe.model.document import Document
 from frappe.query_builder import DocType, Interval
 from frappe.query_builder.functions import Now
-from frappe.utils import get_fullname, now
+from frappe.utils import get_fullname, now, strip_html
 
 
 class ActivityLog(Document):
 	def before_insert(self):
-		self.full_name = get_fullname(self.user)
+		self.full_name = strip_html(get_fullname(self.user))
 		self.date = now()
 
 	def validate(self):
 		self.set_status()
 		set_timeline_doc(self)
+		self.set_ip_address()
 
 	def set_status(self):
 		if not self.is_new():
@@ -24,6 +25,10 @@ class ActivityLog(Document):
 
 		if self.reference_doctype and self.reference_name:
 			self.status = "Linked"
+
+	def set_ip_address(self):
+		if self.operation in ("Login", "Logout"):
+			self.ip_address = frappe.local.request_ip
 
 	@staticmethod
 	def clear_old_logs(days=None):

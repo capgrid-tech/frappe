@@ -5,7 +5,7 @@ import functools
 import re
 
 from rq.command import send_stop_job_command
-from rq.exceptions import InvalidJobOperation
+from rq.exceptions import InvalidJobOperation, NoSuchJobError
 from rq.job import Job
 from rq.queue import Queue
 
@@ -40,9 +40,14 @@ def check_permissions(method):
 
 class RQJob(Document):
 	def load_from_db(self):
-		job = Job.fetch(self.name, connection=get_redis_conn())
+		try:
+			job = Job.fetch(self.name, connection=get_redis_conn())
+		except NoSuchJobError:
+			raise frappe.DoesNotExistError
+
 		if not for_current_site(job):
 			raise frappe.PermissionError
+
 		super(Document, self).__init__(serialize_job(job))
 		self._job_obj = job
 
@@ -52,7 +57,6 @@ class RQJob(Document):
 
 	@staticmethod
 	def get_list(args):
-
 		start = cint(args.get("start")) or 0
 		page_length = cint(args.get("page_length")) or 20
 
@@ -99,6 +103,16 @@ class RQJob(Document):
 			send_stop_job_command(connection=get_redis_conn(), job_id=self.job_id)
 		except InvalidJobOperation:
 			frappe.msgprint(_("Job is not running."), title=_("Invalid Operation"))
+
+	@check_permissions
+	def cancel(self):
+		if self.status == "queued":
+			self.job.cancel()
+		else:
+			frappe.msgprint(
+				_("Job is in {0} state and can't be cancelled").format(self.status),
+				title=_("Invalid Operation"),
+			)
 
 	@staticmethod
 	def get_count(args) -> int:

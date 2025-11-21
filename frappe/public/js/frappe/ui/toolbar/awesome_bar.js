@@ -127,7 +127,6 @@ frappe.search.AwesomeBar = class AwesomeBar {
 			}
 		});
 		frappe.search.utils.setup_recent();
-		frappe.tags.utils.fetch_tags();
 	}
 
 	add_help() {
@@ -288,7 +287,7 @@ frappe.search.AwesomeBar = class AwesomeBar {
 					<kbd>↵</kbd>
 				</span>
 			`,
-			value: __("Search for {0}", [txt]),
+			value: __("Search for {0}", [frappe.utils.xss_sanitise(txt)]),
 			match: txt,
 			index: 100,
 			default: "Search",
@@ -302,13 +301,18 @@ frappe.search.AwesomeBar = class AwesomeBar {
 		var route = frappe.get_route();
 		if (route[0] === "List" && txt.indexOf(" in") === -1) {
 			// search in title field
-			var meta = frappe.get_meta(frappe.container.page.list_view.doctype);
+			const doctype = frappe.container.page?.list_view?.doctype;
+			if (!doctype) return;
+			var meta = frappe.get_meta(doctype);
 			var search_field = meta.title_field || "name";
 			var options = {};
 			options[search_field] = ["like", "%" + txt + "%"];
 			this.options.push({
-				label: __("Find {0} in {1}", [txt.bold(), __(route[1]).bold()]),
-				value: __("Find {0} in {1}", [txt, __(route[1])]),
+				label: __("Find {0} in {1}", [
+					frappe.utils.xss_sanitise(txt).bold(),
+					__(route[1]).bold(),
+				]),
+				value: __("Find {0} in {1}", [frappe.utils.xss_sanitise(txt), __(route[1])]),
 				route_options: options,
 				onclick: function () {
 					cur_list.show();
@@ -328,10 +332,14 @@ frappe.search.AwesomeBar = class AwesomeBar {
 			}
 			try {
 				var val = eval(txt);
-				var formatted_value = __("{0} = {1}", [txt, (val + "").bold()]);
+				var formatted_value = __("{0} = {1}", [
+					frappe.utils.xss_sanitise(txt),
+					(val + "").bold(),
+				]);
 				this.options.push({
 					label: formatted_value,
 					value: __("{0} = {1}", [txt, val]),
+					value: __("{0} = {1}", [frappe.utils.xss_sanitise(txt), val]),
 					match: val,
 					index: 80,
 					default: "Calculator",

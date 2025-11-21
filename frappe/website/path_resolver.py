@@ -44,7 +44,8 @@ class PathResolver:
 			return endpoint, TemplatePage(endpoint, 200)
 
 		custom_renderers = self.get_custom_page_renderers()
-		renderers = custom_renderers + [
+		renderers = [
+			*custom_renderers,
 			StaticPage,
 			WebFormPage,
 			DocumentPage,
@@ -119,7 +120,7 @@ def resolve_redirect(path, query_string=None):
 	for rule in redirects:
 		pattern = rule["source"].strip("/ ") + "$"
 		path_to_match = path
-		if rule.get("match_with_query_string"):
+		if query_string and rule.get("match_with_query_string"):
 			path_to_match = path + "?" + frappe.safe_decode(query_string)
 
 		if re.match(pattern, path_to_match):
@@ -150,8 +151,7 @@ def resolve_path(path):
 def resolve_from_map(path):
 	"""transform dynamic route to a static one from hooks and route defined in doctype"""
 	rules = [
-		Rule(r["from_route"], endpoint=r["to_route"], defaults=r.get("defaults"))
-		for r in get_website_rules()
+		Rule(r["from_route"], endpoint=r["to_route"], defaults=r.get("defaults")) for r in get_website_rules()
 	]
 
 	return evaluate_dynamic_routes(rules, path) or path
@@ -173,3 +173,8 @@ def get_website_rules():
 		return _get()
 
 	return frappe.cache().get_value("website_route_rules", _get)
+
+
+def validate_path(path: str):
+	if not PathResolver(path).is_valid_path():
+		frappe.throw(frappe._("Path {0} it not a valid path").format(frappe.bold(path)))

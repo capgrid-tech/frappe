@@ -10,6 +10,7 @@ import frappe.client
 import frappe.handler
 from frappe import _
 from frappe.utils.data import sbool
+from frappe.utils.password import get_decrypted_password
 from frappe.utils.response import build_response
 
 
@@ -179,6 +180,11 @@ def validate_auth():
 
 	validate_auth_via_hooks()
 
+	# If login via bearer, basic or keypair didn't work then authentication failed and we
+	# should terminate here.
+	if len(authorization_header) == 2 and frappe.session.user in ("", "Guest"):
+		raise frappe.AuthenticationError
+
 
 def validate_oauth(authorization_header):
 	"""
@@ -191,14 +197,15 @@ def validate_oauth(authorization_header):
 	from frappe.integrations.oauth2 import get_oauth_server
 	from frappe.oauth import get_url_delimiter
 
+	if authorization_header[0].lower() != "bearer":
+		return
+
 	form_dict = frappe.local.form_dict
 	token = authorization_header[1]
 	req = frappe.request
 	parsed_url = urlparse(req.url)
 	access_token = {"access_token": token}
-	uri = (
-		parsed_url.scheme + "://" + parsed_url.netloc + parsed_url.path + "?" + urlencode(access_token)
-	)
+	uri = parsed_url.scheme + "://" + parsed_url.netloc + parsed_url.path + "?" + urlencode(access_token)
 	http_method = req.method
 	headers = req.headers
 	body = req.get_data()
@@ -249,9 +256,11 @@ def validate_api_key_secret(api_key, api_secret, frappe_authorization_source=Non
 	"""frappe_authorization_source to provide api key and secret for a doctype apart from User"""
 	doctype = frappe_authorization_source or "User"
 	doc = frappe.db.get_value(doctype=doctype, filters={"api_key": api_key}, fieldname=["name"])
+	if not doc:
+		raise frappe.AuthenticationError
 	form_dict = frappe.local.form_dict
-	doc_secret = frappe.utils.password.get_decrypted_password(doctype, doc, fieldname="api_secret")
-	if api_secret == doc_secret:
+	doc_secret = get_decrypted_password(doctype, doc, fieldname="api_secret", raise_exception=False)
+	if doc_secret and api_secret == doc_secret:
 		if doctype == "User":
 			user = frappe.db.get_value(doctype="User", filters={"api_key": api_key}, fieldname=["name"])
 		else:
@@ -259,6 +268,8 @@ def validate_api_key_secret(api_key, api_secret, frappe_authorization_source=Non
 		if frappe.local.login_manager.user in ("", "Guest"):
 			frappe.set_user(user)
 		frappe.local.form_dict = form_dict
+	else:
+		raise frappe.AuthenticationError
 
 
 def validate_auth_via_hooks():

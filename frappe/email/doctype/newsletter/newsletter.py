@@ -244,11 +244,11 @@ def confirmed_unsubscribe(email, group):
 
 @frappe.whitelist(allow_guest=True)
 @rate_limit(limit=10, seconds=60 * 60)
-def subscribe(email, email_group=None):  # noqa
+def subscribe(email, email_group=None):
 	"""API endpoint to subscribe an email to a particular email group. Triggers a confirmation email."""
 
 	if email_group is None:
-		email_group = _("Website")
+		email_group = get_default_email_group()
 
 	# build subscription confirmation URL
 	api_endpoint = frappe.utils.get_url(
@@ -279,9 +279,7 @@ def subscribe(email, email_group=None):  # noqa
 		content = """
 			<p>{}. {}.</p>
 			<p><a href="{}">{}</a></p>
-		""".format(
-			*translatable_content
-		)
+		""".format(*translatable_content)
 
 	frappe.sendmail(
 		email,
@@ -291,26 +289,39 @@ def subscribe(email, email_group=None):  # noqa
 
 
 @frappe.whitelist(allow_guest=True)
-def confirm_subscription(email, email_group=_("Website")):  # noqa
+def confirm_subscription(email, email_group=None):
 	"""API endpoint to confirm email subscription.
 	This endpoint is called when user clicks on the link sent to their mail.
 	"""
 	if not verify_request():
 		return
 
-	if not frappe.db.exists("Email Group", email_group):
-		frappe.get_doc({"doctype": "Email Group", "title": email_group}).insert(ignore_permissions=True)
+	if email_group is None:
+		email_group = get_default_email_group()
+
+	try:
+		group = frappe.get_doc("Email Group", email_group)
+	except frappe.DoesNotExistError:
+		group = frappe.get_doc({"doctype": "Email Group", "title": email_group}).insert(
+			ignore_permissions=True
+		)
 
 	frappe.flags.ignore_permissions = True
 
 	add_subscribers(email_group, email)
 	frappe.db.commit()
 
-	frappe.respond_as_web_page(
-		_("Confirmed"),
-		_("{0} has been successfully added to the Email Group.").format(email),
-		indicator_color="green",
-	)
+	welcome_url = group.get_welcome_url(email)
+
+	if welcome_url:
+		frappe.local.response["type"] = "redirect"
+		frappe.local.response["location"] = welcome_url
+	else:
+		frappe.respond_as_web_page(
+			_("Confirmed"),
+			_("{0} has been successfully added to the Email Group.").format(email),
+			indicator_color="green",
+		)
 
 
 def get_list_context(context=None):
@@ -352,3 +363,7 @@ def send_scheduled_email():
 
 		if not frappe.flags.in_test:
 			frappe.db.commit()
+
+
+def get_default_email_group():
+	return _("Website", lang=frappe.db.get_default("language"))

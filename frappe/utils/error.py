@@ -8,11 +8,8 @@ import inspect
 import json
 import linecache
 import os
-import pydoc
 import sys
 import traceback
-
-from ldap3.core.exceptions import LDAPException
 
 import frappe
 from frappe.utils import cstr, encode
@@ -21,16 +18,31 @@ EXCLUDE_EXCEPTIONS = (
 	frappe.AuthenticationError,
 	frappe.CSRFTokenError,  # CSRF covers OAuth too
 	frappe.SecurityException,
-	LDAPException,
 	frappe.InReadOnlyMode,
 )
+
+LDAP_BASE_EXCEPTION = "LDAPException"
+
+
+def _is_ldap_exception(e):
+	"""Check if exception is from LDAP library.
+
+	This is a hack but ensures that LDAP is not imported unless it's required. This is tested in
+	unittests in case the exception changes in future.
+	"""
+
+	for t in type(e).__mro__:
+		if t.__name__ == LDAP_BASE_EXCEPTION:
+			return True
+
+	return False
 
 
 def make_error_snapshot(exception):
 	if frappe.conf.disable_error_snapshot:
 		return
 
-	if isinstance(exception, EXCLUDE_EXCEPTIONS):
+	if isinstance(exception, EXCLUDE_EXCEPTIONS) or _is_ldap_exception(exception):
 		return
 
 	logger = frappe.logger(with_more_info=True)
@@ -57,6 +69,8 @@ def make_error_snapshot(exception):
 
 
 def get_snapshot(exception, context=10):
+	import pydoc
+
 	"""
 	Return a dict describing a given traceback (based on cgitb.text)
 	"""
@@ -68,9 +82,7 @@ def get_snapshot(exception, context=10):
 	# creates a snapshot dict with some basic information
 
 	s = {
-		"pyver": "Python {version:s}: {executable:s} (prefix: {prefix:s})".format(
-			version=sys.version.split(maxsplit=1)[0], executable=sys.executable, prefix=sys.prefix
-		),
+		"pyver": f"Python {sys.version.split(maxsplit=1)[0]:s}: {sys.executable:s} (prefix: {sys.prefix:s})",
 		"timestamp": cstr(datetime.datetime.now()),
 		"traceback": traceback.format_exc(),
 		"frames": [],
@@ -99,7 +111,7 @@ def get_snapshot(exception, context=10):
 		def reader(lnum=[lnum]):  # noqa
 			try:
 				# B023: function is evaluated immediately, binding not necessary
-				return linecache.getline(file, lnum[0])  # noqa: B023
+				return linecache.getline(file, lnum[0])
 			finally:
 				lnum[0] += 1
 
@@ -215,9 +227,7 @@ def get_error_snapshot_path():
 def get_default_args(func):
 	"""Get default arguments of a function from its signature."""
 	signature = inspect.signature(func)
-	return {
-		k: v.default for k, v in signature.parameters.items() if v.default is not inspect.Parameter.empty
-	}
+	return {k: v.default for k, v in signature.parameters.items() if v.default is not inspect.Parameter.empty}
 
 
 def raise_error_on_no_output(error_message, error_type=None, keep_quiet=None):
@@ -233,8 +243,8 @@ def raise_error_on_no_output(error_message, error_type=None, keep_quiet=None):
 	:type keep_quiet: function
 
 	>>> @raise_error_on_no_output("Ingradients missing")
-	... def get_indradients(_raise_error=1): return
-	...
+	... def get_indradients(_raise_error=1):
+	...     return
 	>>> get_ingradients()
 	`Exception Name`: Ingradients missing
 	"""

@@ -253,12 +253,11 @@ Object.assign(frappe.utils, {
 			">": "&gt;",
 			'"': "&quot;",
 			"'": "&#39;",
-			"/": "&#x2F;",
 			"`": "&#x60;",
 			"=": "&#x3D;",
 		};
 
-		return String(txt).replace(/[&<>"'`=/]/g, (char) => escape_html_mapping[char] || char);
+		return String(txt).replace(/[&<>"'`=]/g, (char) => escape_html_mapping[char] || char);
 	},
 
 	unescape_html: function (txt) {
@@ -268,13 +267,12 @@ Object.assign(frappe.utils, {
 			"&gt;": ">",
 			"&quot;": '"',
 			"&#39;": "'",
-			"&#x2F;": "/",
 			"&#x60;": "`",
 			"&#x3D;": "=",
 		};
 
 		return String(txt).replace(
-			/&amp;|&lt;|&gt;|&quot;|&#39;|&#x2F;|&#x60;|&#x3D;/g,
+			/&amp;|&lt;|&gt;|&quot;|&#39;|&#x60;|&#x3D;/g,
 			(char) => unescape_html_mapping[char] || char
 		);
 	},
@@ -340,9 +338,21 @@ Object.assign(frappe.utils, {
 			scroll_top = 0;
 		}
 
+		const highlight = () => {
+			if (highlight_element) {
+				$(element).addClass("highlight");
+				document.addEventListener(
+					"click",
+					function () {
+						$(element).removeClass("highlight");
+					},
+					{ once: true }
+				);
+			}
+		};
 		// already there
 		if (scroll_top == element_to_be_scrolled.scrollTop()) {
-			return;
+			return highlight();
 		}
 
 		if (animate) {
@@ -352,16 +362,7 @@ Object.assign(frappe.utils, {
 				})
 				.promise()
 				.then(() => {
-					if (highlight_element) {
-						$(element).addClass("highlight");
-						document.addEventListener(
-							"click",
-							function () {
-								$(element).removeClass("highlight");
-							},
-							{ once: true }
-						);
-					}
+					highlight();
 					callback && callback();
 				});
 		} else {
@@ -935,29 +936,29 @@ Object.assign(frappe.utils, {
 		let route = route_str.split("/");
 
 		if (route[2] === "Report" || route[0] === "query-report") {
-			return __("{0} Report", [route[3] || route[1]]);
+			return __("{0} Report", [__(route[3]) || __(route[1])]);
 		}
 		if (route[0] === "List") {
-			return __("{0} List", [route[1]]);
+			return __("{0} List", [__(route[1])]);
 		}
 		if (route[0] === "modules") {
-			return __("{0} Modules", [route[1]]);
+			return __("{0} Modules", [__(route[1])]);
 		}
 		if (route[0] === "dashboard") {
-			return __("{0} Dashboard", [route[1]]);
+			return __("{0} Dashboard", [__(route[1])]);
 		}
-		return __(frappe.utils.to_title_case(route[0], true));
+		return __(frappe.utils.to_title_case(__(route[0]), true));
 	},
 	report_column_total: function (values, column, type) {
 		if (column.column.disable_total) {
 			return "";
 		} else if (values.length > 0) {
 			if (column.column.fieldtype == "Percent" || type === "mean") {
-				return values.reduce((a, b) => a + flt(b)) / values.length;
+				return values.reduce((a, b) => flt(a) + flt(b)) / values.length;
 			} else if (column.column.fieldtype == "Int") {
-				return values.reduce((a, b) => a + cint(b));
+				return values.reduce((a, b) => cint(a) + cint(b));
 			} else if (frappe.model.is_numeric_field(column.column.fieldtype)) {
-				return values.reduce((a, b) => a + flt(b));
+				return values.reduce((a, b) => flt(a) + flt(b));
 			} else {
 				return null;
 			}
@@ -1127,7 +1128,7 @@ Object.assign(frappe.utils, {
 		if (value) {
 			let total_duration = frappe.utils.seconds_to_duration(value, duration_options);
 
-			if (total_duration.days) {
+			if (total_duration.days && duration_options.hide_days !== 1) {
 				duration += total_duration.days + __("d", null, "Days (Field: Duration)");
 			}
 			if (total_duration.hours) {
@@ -1138,7 +1139,7 @@ Object.assign(frappe.utils, {
 				duration += duration.length ? " " : "";
 				duration += total_duration.minutes + __("m", null, "Minutes (Field: Duration)");
 			}
-			if (total_duration.seconds) {
+			if (total_duration.seconds && duration_options.hide_seconds !== 1) {
 				duration += duration.length ? " " : "";
 				duration += total_duration.seconds + __("s", null, "Seconds (Field: Duration)");
 			}
@@ -1147,17 +1148,22 @@ Object.assign(frappe.utils, {
 	},
 
 	seconds_to_duration(seconds, duration_options) {
-		const round = seconds > 0 ? Math.floor : Math.ceil;
+		const floor = seconds > 0 ? Math.floor : Math.ceil;
 		const total_duration = {
-			days: round(seconds / 86400), // 60 * 60 * 24
-			hours: round((seconds % 86400) / 3600),
-			minutes: round((seconds % 3600) / 60),
-			seconds: round(seconds % 60),
+			days: floor(seconds / 86400), // 60 * 60 * 24
+			hours: floor((seconds % 86400) / 3600),
+			minutes: floor((seconds % 3600) / 60),
+			seconds: floor(seconds % 60),
 		};
 
 		if (duration_options && duration_options.hide_days) {
-			total_duration.hours = round(seconds / 3600);
+			total_duration.hours = floor(seconds / 3600);
 			total_duration.days = 0;
+		}
+
+		if (duration_options && duration_options.hide_seconds) {
+			total_duration.minutes += Math.round(total_duration.seconds / 60);
+			total_duration.seconds = 0;
 		}
 
 		return total_duration;
@@ -1191,6 +1197,8 @@ Object.assign(frappe.utils, {
 	get_number_system: function (country) {
 		if (["Bangladesh", "India", "Myanmar", "Pakistan"].includes(country)) {
 			return number_systems.indian;
+		} else if (country == "Nepal") {
+			return number_systems.nepalese;
 		} else {
 			return number_systems.default;
 		}
@@ -1204,6 +1212,7 @@ Object.assign(frappe.utils, {
 			attribution:
 				'&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors',
 		},
+		image_path: "/assets/frappe/images/leaflet/",
 	},
 
 	icon(icon_name, size = "sm", icon_class = "", icon_style = "", svg_class = "") {
@@ -1292,6 +1301,9 @@ Object.assign(frappe.utils, {
 							break;
 						case "Kanban":
 							route = `${doctype_slug}/view/kanban`;
+							if (item.kanban_board) {
+								route += `/${item.kanban_board}`;
+							}
 							break;
 						default:
 							route = doctype_slug;
@@ -1301,7 +1313,7 @@ Object.assign(frappe.utils, {
 				if (item.is_query_report) {
 					route = "query-report/" + item.name;
 				} else if (!item.doctype) {
-					route = "/report/" + item.name;
+					route = "report/" + item.name;
 				} else {
 					route = frappe.router.slug(item.doctype) + "/view/report/" + item.name;
 				}
@@ -1340,10 +1352,19 @@ Object.assign(frappe.utils, {
 
 		// return number if total digits is lesser than min_length
 		const len = String(number).match(/\d/g).length;
-		if (len < min_length) return number.toString();
+		if (len < min_length) {
+			return number.toString();
+		}
 
 		const number_system = this.get_number_system(country);
 		let x = Math.abs(Math.round(number));
+
+		// if rounding was sufficient to get below min_length, return the rounded number
+		const x_string = x.toString();
+		if (x_string.length < min_length) {
+			return x_string;
+		}
+
 		for (const map of number_system) {
 			if (x >= map.divisor) {
 				let result = number / map.divisor;
@@ -1440,6 +1461,67 @@ Object.assign(frappe.utils, {
 		prepend && wrapper.prepend(button);
 	},
 
+	add_select_group_button(wrapper, actions, btn_type, icon = "", prepend) {
+		// actions = [{
+		// 	label: "Action 1",
+		// 	description: "Description 1", (optional)
+		// 	action: () => {},
+		// },
+		// {
+		// 	label: "Action 2",
+		// 	description: "Description 2", (optional)
+		// 	action: () => {},
+		// }]
+		let selected_action = actions[0];
+
+		let $select_group_button = $(`
+			<div class="btn-group select-group-btn">
+				<button type="button" class="btn ${btn_type} btn-sm selected-button">
+					<span class="left-icon">${icon && frappe.utils.icon(icon, "xs")}</span>
+					<span class="label">${selected_action.label}</span>
+				</button>
+
+				<button type="button" class="btn ${btn_type} btn-sm dropdown-toggle dropdown-toggle-split" data-toggle="dropdown">
+					${frappe.utils.icon("down", "xs")}
+				</button>
+
+				<ul class="dropdown-menu dropdown-menu-right" role="menu"></ul>
+			</div>
+		`);
+
+		actions.forEach((action) => {
+			$(`<li>
+				<a class="dropdown-item flex">
+					<div class="tick-icon mr-2">${frappe.utils.icon("check", "xs")}</div>
+					<div>
+						<div class="item-label">${action.label}</div>
+						<div class="item-description text-muted small">${action.description || ""}</div>
+					</div>
+				</a>
+			</li>`)
+				.appendTo($select_group_button.find(".dropdown-menu"))
+				.click((e) => {
+					selected_action = action;
+					$select_group_button.find(".selected-button .label").text(action.label);
+
+					$(e.currentTarget).find(".tick-icon").addClass("selected");
+					$(e.currentTarget).siblings().find(".tick-icon").removeClass("selected");
+				});
+		});
+
+		$select_group_button.find(".dropdown-menu li:first-child .tick-icon").addClass("selected");
+
+		$select_group_button.find(".selected-button").click((event) => {
+			event.stopPropagation();
+			selected_action.action && selected_action.action(event);
+		});
+
+		!prepend && $select_group_button.appendTo(wrapper);
+		prepend && wrapper.prepend($select_group_button);
+
+		return $select_group_button;
+	},
+
 	sleep(time) {
 		return new Promise((resolve) => setTimeout(resolve, time));
 	},
@@ -1486,6 +1568,9 @@ Object.assign(frappe.utils, {
 	},
 
 	fetch_link_title(doctype, name) {
+		if (!doctype || !name) {
+			return;
+		}
 		try {
 			return frappe
 				.xcall("frappe.desk.search.get_link_title", {
@@ -1539,7 +1624,6 @@ Object.assign(frappe.utils, {
 	get_filter_as_json(filters) {
 		// convert filter array to json
 		let filter = null;
-
 		if (filters.length) {
 			filter = {};
 			filters.forEach((arr) => {
@@ -1547,8 +1631,11 @@ Object.assign(frappe.utils, {
 			});
 			filter = JSON.stringify(filter);
 		}
-
 		return filter;
+	},
+
+	process_filter_expression(filter) {
+		return new Function(`return ${filter}`)();
 	},
 
 	get_filter_from_json(filter_json, doctype) {
@@ -1558,12 +1645,22 @@ Object.assign(frappe.utils, {
 				return [];
 			}
 
-			const filters_json = new Function(`return ${filter_json}`)();
+			const filters_json = this.process_filter_expression(filter_json);
 			if (!doctype) {
 				// e.g. return {
 				//    priority: (2) ['=', 'Medium'],
 				//    status: (2) ['=', 'Open']
 				// }
+
+				// don't remove unless patch is created to convert all existing filters from object to array
+				// backward compatibility
+				if (Array.isArray(filters_json)) {
+					let filter = {};
+					filters_json.forEach((arr) => {
+						filter[arr[1]] = [arr[2], arr[3]];
+					});
+					return filter || [];
+				}
 				return filters_json || [];
 			}
 
@@ -1571,6 +1668,11 @@ Object.assign(frappe.utils, {
 			//    ['ToDo', 'status', '=', 'Open', false],
 			//    ['ToDo', 'priority', '=', 'Medium', false]
 			// ]
+			if (Array.isArray(filters_json)) {
+				return filters_json;
+			}
+			// don't remove unless patch is created to convert all existing filters from object to array
+			// backward compatibility
 			return Object.keys(filters_json).map((filter) => {
 				let val = filters_json[filter];
 				return [doctype, filter, val[0], val[1], false];
@@ -1588,9 +1690,6 @@ Object.assign(frappe.utils, {
 
 	debug: {
 		watch_property(obj, prop, callback = console.trace) {
-			if (!frappe.boot.developer_mode) {
-				return;
-			}
 			console.warn("Adding property watcher, make sure to remove it after debugging.");
 
 			// Adapted from https://stackoverflow.com/a/11658693

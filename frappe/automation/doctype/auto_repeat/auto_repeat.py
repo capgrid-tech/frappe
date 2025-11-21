@@ -12,6 +12,8 @@ from frappe.contacts.doctype.contact.contact import (
 	get_contacts_linked_from,
 	get_contacts_linking_to,
 )
+from frappe.core.doctype.communication.email import make
+from frappe.desk.form import assign_to
 from frappe.model.document import Document
 from frappe.utils import (
 	add_days,
@@ -56,9 +58,8 @@ class AutoRepeat(Document):
 
 	def before_insert(self):
 		if not frappe.flags.in_test:
-			start_date = getdate(self.start_date)
-			today_date = getdate(today())
-			if start_date <= today_date:
+			today_date = getdate()
+			if getdate(self.start_date) < today_date:
 				self.start_date = today_date
 
 	def after_save(self):
@@ -99,12 +100,18 @@ class AutoRepeat(Document):
 			return
 
 		if self.end_date:
+			end_date = getdate(self.end_date)
+
 			self.validate_from_to_dates("start_date", "end_date")
 
-		if self.end_date == self.start_date:
-			frappe.throw(
-				_("{0} should not be same as {1}").format(frappe.bold("End Date"), frappe.bold("Start Date"))
-			)
+			if end_date == getdate():
+				frappe.throw(_("End Date cannot be today."))
+			if end_date == getdate(self.start_date):
+				frappe.throw(
+					_("{0} should not be same as {1}").format(
+						frappe.bold(_("End Date")), frappe.bold(_("Start Date"))
+					)
+				)
 
 	def validate_email_id(self):
 		if self.notify_by_email:
@@ -169,7 +176,7 @@ class AutoRepeat(Document):
 		if self.end_date:
 			next_date = self.get_next_schedule_date(schedule_date=start_date, for_full_schedule=True)
 
-			while getdate(next_date) < getdate(end_date):
+			while getdate(next_date) <= getdate(end_date):
 				row = {
 					"reference_document": self.reference_document,
 					"frequency": self.frequency,
@@ -372,16 +379,14 @@ class AutoRepeat(Document):
 		elif "{" in self.message:
 			message = frappe.render_template(self.message, {"doc": new_doc})
 
-		recipients = self.recipients.split("\n")
-
-		frappe.sendmail(
-			reference_doctype=new_doc.doctype,
-			reference_name=new_doc.name,
-			recipients=recipients,
+		make(
+			doctype=new_doc.doctype,
+			name=new_doc.name,
+			recipients=self.recipients,
 			subject=subject,
 			content=message,
 			attachments=attachments,
-			expose_recipients="header",
+			send_email=1,
 		)
 
 	@frappe.whitelist()
@@ -526,24 +531,22 @@ def get_auto_repeat_doctypes(doctype, txt, searchfield, start, page_len, filters
 
 
 @frappe.whitelist()
-def update_reference(docname, reference):
-	result = ""
-	try:
-		frappe.db.set_value("Auto Repeat", docname, "reference_document", reference)
-		result = "success"
-	except Exception as e:
-		result = "error"
-		raise e
-	return result
+def update_reference(docname: str, reference: str):
+	doc = frappe.get_doc("Auto Repeat", str(docname))
+	doc.check_permission("write")
+	doc.db_set("reference_document", str(reference))
+	return "success"  # backward compatbility
 
 
-@frappe.whitelist()
-def generate_message_preview(reference_dt, reference_doc, message=None, subject=None):
+@frappe.whitelist(methods=["POST"])
+def generate_message_preview(name: str):
 	frappe.has_permission("Auto Repeat", "write", throw=True)
-	doc = frappe.get_doc(reference_dt, reference_doc)
+	auto_repeat = frappe.get_doc("Auto Repeat", str(name))
+	doc = frappe.get_doc(auto_repeat.reference_doctype, auto_repeat.reference_document)
+	doc.check_permission()
 	subject_preview = _("Please add a subject to your email")
-	msg_preview = frappe.render_template(message, {"doc": doc})
-	if subject:
-		subject_preview = frappe.render_template(subject, {"doc": doc})
+	msg_preview = frappe.render_template(auto_repeat.message, {"doc": doc})
+	if auto_repeat.subject:
+		subject_preview = frappe.render_template(auto_repeat.subject, {"doc": doc})
 
 	return {"message": msg_preview, "subject": subject_preview}

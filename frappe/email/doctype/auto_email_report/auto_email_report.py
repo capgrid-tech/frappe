@@ -109,6 +109,7 @@ class AutoEmailReport(Document):
 			filters=self.filters,
 			as_dict=True,
 			ignore_prepared_report=True,
+			are_default_filters=False,
 		)
 
 		# add serial numbers
@@ -145,7 +146,6 @@ class AutoEmailReport(Document):
 			frappe.throw(_("Invalid Output Format"))
 
 	def get_html_table(self, columns=None, data=None):
-
 		date_time = global_date_format(now()) + " " + format_time(now())
 		report_doctype = frappe.db.get_value("Report", self.report, "ref_doctype")
 
@@ -208,6 +208,7 @@ class AutoEmailReport(Document):
 			attachments=attachments,
 			reference_doctype=self.doctype,
 			reference_name=self.name,
+			queue_separately=True,
 		)
 
 	def dynamic_date_filters_set(self):
@@ -241,25 +242,36 @@ def send_now(name):
 def send_daily():
 	"""Check reports to be sent daily"""
 
-	current_day = calendar.day_name[now_datetime().weekday()]
 	enabled_reports = frappe.get_all(
 		"Auto Email Report", filters={"enabled": 1, "frequency": ("in", ("Daily", "Weekdays", "Weekly"))}
 	)
 
 	for report in enabled_reports:
-		auto_email_report = frappe.get_doc("Auto Email Report", report.name)
+		frappe.enqueue(
+			"frappe.email.doctype.auto_email_report.auto_email_report.process_auto_email_report",
+			report=report,
+			queue="long",
+		)
 
-		# if not correct weekday, skip
-		if auto_email_report.frequency == "Weekdays":
-			if current_day in ("Saturday", "Sunday"):
-				continue
-		elif auto_email_report.frequency == "Weekly":
-			if auto_email_report.day_of_week != current_day:
-				continue
-		try:
-			auto_email_report.send()
-		except Exception as e:
-			auto_email_report.log_error(f"Failed to send {auto_email_report.name} Auto Email Report")
+
+def process_auto_email_report(report):
+	"""Process and send the Auto Email Report based on frequency"""
+
+	current_day = calendar.day_name[now_datetime().weekday()]
+
+	auto_email_report = frappe.get_doc("Auto Email Report", report.name)
+
+	# if not correct weekday, skip
+	if auto_email_report.frequency == "Weekdays":
+		if current_day in ("Saturday", "Sunday"):
+			return
+	elif auto_email_report.frequency == "Weekly":
+		if auto_email_report.day_of_week != current_day:
+			return
+	try:
+		auto_email_report.send()
+	except Exception:
+		auto_email_report.log_error(f"Failed to send {auto_email_report.name} Auto Email Report")
 
 
 def send_monthly():
@@ -282,7 +294,11 @@ def make_links(columns, data):
 				if col.options and row.get(col.options):
 					row[col.fieldname] = get_link_to_form(row[col.options], row[col.fieldname])
 			elif col.fieldtype == "Currency":
-				doc = frappe.get_doc(col.parent, doc_name) if doc_name and col.get("parent") else None
+				doc = None
+				if doc_name and col.get("parent") and not frappe.get_meta(col.parent).istable:
+					if frappe.db.exists(col.parent, doc_name):
+						doc = frappe.get_doc(col.parent, doc_name)
+
 				# Pass the Document to get the currency based on docfield option
 				row[col.fieldname] = frappe.format_value(row[col.fieldname], col, doc=doc)
 	return columns, data

@@ -30,10 +30,7 @@ class PostgresTable(DBTable):
 			)
 
 		# creating sequence(s)
-		if (
-			not self.meta.issingle and self.meta.autoname == "autoincrement"
-		) or self.doctype in log_types:
-
+		if (not self.meta.issingle and self.meta.autoname == "autoincrement") or self.doctype in log_types:
 			frappe.db.create_sequence(self.doctype, check_not_exists=True, cache=frappe.db.SEQUENCE_CACHE)
 			name_column = "name bigint primary key"
 
@@ -57,16 +54,14 @@ class PostgresTable(DBTable):
 
 	def create_indexes(self):
 		create_index_query = ""
-		for key, col in self.columns.items():
+		for _key, col in self.columns.items():
 			if (
 				col.set_index
 				and col.fieldtype in frappe.db.type_map
 				and frappe.db.type_map.get(col.fieldtype)[0] not in ("text", "longtext")
 			):
 				create_index_query += (
-					'CREATE INDEX IF NOT EXISTS "{index_name}" ON `{table_name}`(`{field}`);'.format(
-						index_name=col.fieldname, table_name=self.table_name, field=col.fieldname
-					)
+					f'CREATE INDEX IF NOT EXISTS "{col.fieldname}" ON `{self.table_name}`(`{col.fieldname}`);'
 				)
 		if create_index_query:
 			# nosemgrep
@@ -121,17 +116,13 @@ class PostgresTable(DBTable):
 		for col in self.add_index:
 			# if index key not exists
 			create_contraint_query += (
-				'CREATE INDEX IF NOT EXISTS "{index_name}" ON `{table_name}`(`{field}`);'.format(
-					index_name=col.fieldname, table_name=self.table_name, field=col.fieldname
-				)
+				f'CREATE INDEX IF NOT EXISTS "{col.fieldname}" ON `{self.table_name}`(`{col.fieldname}`);'
 			)
 
 		for col in self.add_unique:
 			# if index key not exists
-			create_contraint_query += (
-				'CREATE UNIQUE INDEX IF NOT EXISTS "unique_{index_name}" ON `{table_name}`(`{field}`);'.format(
-					index_name=col.fieldname, table_name=self.table_name, field=col.fieldname
-				)
+			create_contraint_query += 'CREATE UNIQUE INDEX IF NOT EXISTS "unique_{index_name}" ON `{table_name}`(`{field}`);'.format(
+				index_name=col.fieldname, table_name=self.table_name, field=col.fieldname
 			)
 
 		drop_contraint_query = ""
@@ -164,9 +155,9 @@ class PostgresTable(DBTable):
 			elif frappe.db.is_duplicate_entry(e):
 				fieldname = str(e).split("'")[-2]
 				frappe.throw(
-					_("{0} field cannot be set as unique in {1}, as there are non-unique existing values").format(
-						fieldname, self.table_name
-					)
+					_(
+						"{0} field cannot be set as unique in {1}, as there are non-unique existing values"
+					).format(fieldname, self.table_name)
 				)
 			else:
 				raise e

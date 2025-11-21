@@ -15,6 +15,7 @@ def before_install():
 	frappe.reload_doc("desk", "doctype", "form_tour_step")
 	frappe.reload_doc("desk", "doctype", "form_tour")
 	frappe.reload_doc("core", "doctype", "doctype")
+	frappe.clear_cache()
 
 
 def after_install():
@@ -112,27 +113,6 @@ def install_basic_docs():
 		{"doctype": "Workflow Action Master", "workflow_action_name": "Approve"},
 		{"doctype": "Workflow Action Master", "workflow_action_name": "Reject"},
 		{"doctype": "Workflow Action Master", "workflow_action_name": "Review"},
-		{
-			"doctype": "Email Domain",
-			"domain_name": "example.com",
-			"email_id": "account@example.com",
-			"password": "pass",
-			"email_server": "imap.example.com",
-			"use_imap": 1,
-			"smtp_server": "smtp.example.com",
-		},
-		{
-			"doctype": "Email Account",
-			"domain": "example.com",
-			"email_id": "notifications@example.com",
-			"default_outgoing": 1,
-		},
-		{
-			"doctype": "Email Account",
-			"domain": "example.com",
-			"email_id": "replies@example.com",
-			"default_incoming": 1,
-		},
 	]
 
 	for d in install_docs:

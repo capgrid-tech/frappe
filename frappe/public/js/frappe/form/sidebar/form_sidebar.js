@@ -66,7 +66,9 @@ frappe.ui.form.Sidebar = class {
 	refresh() {
 		if (this.frm.doc.__islocal) {
 			this.sidebar.toggle(false);
+			this.page.sidebar.addClass("hide-sidebar");
 		} else {
+			this.page.sidebar.removeClass("hide-sidebar");
 			this.sidebar.toggle(true);
 			this.frm.assign_to.refresh();
 			this.frm.attachments.refresh();
@@ -90,7 +92,7 @@ frappe.ui.form.Sidebar = class {
 						"{0} edited this {1}",
 						[
 							frappe.user.full_name(this.frm.doc.modified_by).bold(),
-							"<br>" + comment_when(this.frm.doc.modified),
+							" · " + comment_when(this.frm.doc.modified),
 						],
 						"For example, 'Jon Doe edited this 5 minutes ago'."
 					)
@@ -102,7 +104,7 @@ frappe.ui.form.Sidebar = class {
 						"{0} created this {1}",
 						[
 							frappe.user.full_name(this.frm.doc.owner).bold(),
-							"<br>" + comment_when(this.frm.doc.creation),
+							" · " + comment_when(this.frm.doc.creation),
 						],
 						"For example, 'Jon Doe created this 5 minutes ago'."
 					)
@@ -130,7 +132,7 @@ frappe.ui.form.Sidebar = class {
 				callback: function (res) {
 					me.sidebar
 						.find(".auto-repeat-status")
-						.html(__("Repeats {0}", [res.message.frequency]));
+						.html(__("Repeats {0}", [__(res.message.frequency)]));
 					me.sidebar.find(".auto-repeat-status").on("click", function () {
 						frappe.set_route("Form", "Auto Repeat", me.frm.doc.auto_repeat);
 					});

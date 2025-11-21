@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.permissions import AUTOMATIC_ROLES
 from frappe.utils import add_to_date, now
 
 UI_TEST_USER = "frappe@example.com"
@@ -239,9 +240,7 @@ def create_web_page(title, route, single_thread):
 	web_page = frappe.db.exists("Web Page", {"route": route})
 	if web_page:
 		return web_page
-	web_page = frappe.get_doc(
-		{"doctype": "Web Page", "title": title, "route": route, "published": True}
-	)
+	web_page = frappe.get_doc({"doctype": "Web Page", "title": title, "route": route, "published": True})
 	web_page.save()
 
 	web_page.append(
@@ -398,7 +397,6 @@ def insert_translations():
 
 @whitelist_for_tests
 def create_blog_post():
-
 	blog_category = frappe.get_doc(
 		{"name": "general", "doctype": "Blog Category", "title": "general"}
 	).insert(ignore_if_duplicate=True)
@@ -444,10 +442,9 @@ def create_test_user(username=None):
 
 	user.reload()
 
-	blocked_roles = {"Administrator", "Guest", "All"}
 	all_roles = set(frappe.get_all("Role", pluck="name"))
 
-	for role in all_roles - blocked_roles:
+	for role in all_roles - set(AUTOMATIC_ROLES):
 		user.append("roles", {"role": role})
 
 	user.save()
@@ -499,6 +496,9 @@ def setup_image_doctype():
 @whitelist_for_tests
 def setup_inbox():
 	frappe.db.delete("User Email")
+	doc = frappe.new_doc("Email Account")
+	doc.email_id = "email_linking@example.com"
+	doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
 
 	user = frappe.get_doc("User", frappe.session.user)
 	user.append("user_emails", {"email_account": "Email Linking"})
@@ -587,6 +587,15 @@ def create_kanban():
 @whitelist_for_tests
 def create_todo(description):
 	frappe.get_doc({"doctype": "ToDo", "description": description}).insert()
+
+
+@whitelist_for_tests
+def create_todo_with_attachment_limit(description):
+	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+
+	make_property_setter("ToDo", None, "max_attachments", 12, "int", for_doctype=True)
+
+	return frappe.get_doc({"doctype": "ToDo", "description": description}).insert()
 
 
 @whitelist_for_tests

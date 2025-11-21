@@ -13,6 +13,8 @@ from frappe.query_builder.functions import (
 	Date,
 	GroupConcat,
 	Match,
+	Round,
+	Truncate,
 	UnixTimestamp,
 )
 from frappe.query_builder.utils import db_type_is
@@ -67,8 +69,7 @@ class TestCustomFunctionsMariaDB(FrappeTestCase):
 		)
 
 		select_query = select_query.where(
-			CombineDatetime(note.posting_date, note.posting_time)
-			>= CombineDatetime("2021-01-01", "00:00:01")
+			CombineDatetime(note.posting_date, note.posting_time) >= CombineDatetime("2021-01-01", "00:00:01")
 		)
 		self.assertIn(
 			"timestamp(`tabnote`.`posting_date`,`tabnote`.`posting_time`)>=timestamp('2021-01-01','00:00:01')",
@@ -109,9 +110,7 @@ class TestCustomFunctionsMariaDB(FrappeTestCase):
 		)
 
 		# Function comparison
-		select_query = select_query.where(
-			UnixTimestamp(note.posting_date) >= UnixTimestamp("2021-01-01")
-		)
+		select_query = select_query.where(UnixTimestamp(note.posting_date) >= UnixTimestamp("2021-01-01"))
 		self.assertIn(
 			"unix_timestamp(`tabnote`.`posting_date`)>=unix_timestamp('2021-01-01')",
 			str(select_query).lower(),
@@ -130,9 +129,7 @@ class TestCustomFunctionsMariaDB(FrappeTestCase):
 			"TIMESTAMP('2021-01-01','00:00:21')", CombineDatetime("2021-01-01", time(0, 0, 21)).get_sql()
 		)
 
-		select_query = frappe.qb.from_(note).select(
-			CombineDatetime(note.posting_date, note.posting_time)
-		)
+		select_query = frappe.qb.from_(note).select(CombineDatetime(note.posting_date, note.posting_time))
 		self.assertIn("select timestamp(`posting_date`,`posting_time`)", str(select_query).lower())
 
 		select_query = select_query.where(
@@ -152,6 +149,20 @@ class TestCustomFunctionsMariaDB(FrappeTestCase):
 			frappe.qb.from_("red").from_(note).select("other", Cast_(note.name, "varchar")).get_sql(),
 			"SELECT `tabred`.`other`,CONCAT(`tabNote`.`name`,'') FROM `tabred`,`tabNote`",
 		)
+
+	def test_round(self):
+		note = frappe.qb.DocType("Note")
+
+		query = frappe.qb.from_(note).select(Round(note.price))
+		self.assertEqual("select round(`price`,0) from `tabnote`", str(query).lower())
+
+		query = frappe.qb.from_(note).select(Round(note.price, 3))
+		self.assertEqual("select round(`price`,3) from `tabnote`", str(query).lower())
+
+	def test_truncate(self):
+		note = frappe.qb.DocType("Note")
+		query = frappe.qb.from_(note).select(Truncate(note.price, 3))
+		self.assertEqual("select truncate(`price`,3) from `tabnote`", str(query).lower())
 
 
 @run_only_if(db_type_is.POSTGRES)
@@ -186,18 +197,13 @@ class TestCustomFunctionsPostgres(FrappeTestCase):
 			.on(todo.refernce_name == note.name)
 			.select(CombineDatetime(note.posting_date, note.posting_time))
 		)
-		self.assertIn(
-			'select "tabnote"."posting_date"+"tabnote"."posting_time"', str(select_query).lower()
-		)
+		self.assertIn('select "tabnote"."posting_date"+"tabnote"."posting_time"', str(select_query).lower())
 
 		select_query = select_query.orderby(CombineDatetime(note.posting_date, note.posting_time))
-		self.assertIn(
-			'order by "tabnote"."posting_date"+"tabnote"."posting_time"', str(select_query).lower()
-		)
+		self.assertIn('order by "tabnote"."posting_date"+"tabnote"."posting_time"', str(select_query).lower())
 
 		select_query = select_query.where(
-			CombineDatetime(note.posting_date, note.posting_time)
-			>= CombineDatetime("2021-01-01", "00:00:01")
+			CombineDatetime(note.posting_date, note.posting_time) >= CombineDatetime("2021-01-01", "00:00:01")
 		)
 		self.assertIn(
 			"""where "tabnote"."posting_date"+"tabnote"."posting_time">=cast('2021-01-01' as date)+cast('00:00:01' as time)""",
@@ -260,9 +266,7 @@ class TestCustomFunctionsPostgres(FrappeTestCase):
 			CombineDatetime("2021-01-01", time(0, 0, 21)).get_sql(),
 		)
 
-		select_query = frappe.qb.from_(note).select(
-			CombineDatetime(note.posting_date, note.posting_time)
-		)
+		select_query = frappe.qb.from_(note).select(CombineDatetime(note.posting_date, note.posting_time))
 		self.assertIn('select "posting_date"+"posting_time"', str(select_query).lower())
 
 		select_query = select_query.where(
@@ -282,6 +286,20 @@ class TestCustomFunctionsPostgres(FrappeTestCase):
 			frappe.qb.from_("red").from_(note).select("other", Cast_(note.name, "varchar")).get_sql(),
 			'SELECT "tabred"."other",CAST("tabNote"."name" AS VARCHAR) FROM "tabred","tabNote"',
 		)
+
+	def test_round(self):
+		note = frappe.qb.DocType("Note")
+
+		query = frappe.qb.from_(note).select(Round(note.price))
+		self.assertEqual('select round("price",0) from "tabnote"', str(query).lower())
+
+		query = frappe.qb.from_(note).select(Round(note.price, 3))
+		self.assertEqual('select round("price",3) from "tabnote"', str(query).lower())
+
+	def test_truncate(self):
+		note = frappe.qb.DocType("Note")
+		query = frappe.qb.from_(note).select(Truncate(note.price, 3))
+		self.assertEqual('select truncate("price",3) from "tabnote"', str(query).lower())
 
 
 class TestBuilderBase:
@@ -342,9 +360,7 @@ class TestParameterization(FrappeTestCase):
 	def test_where_conditions_functions(self):
 		DocType = frappe.qb.DocType("DocType")
 		query = (
-			frappe.qb.from_(DocType)
-			.select(DocType.name)
-			.where(Coalesce(DocType.search_fields == "subject"))
+			frappe.qb.from_(DocType).select(DocType.name).where(Coalesce(DocType.search_fields == "subject"))
 		)
 
 		self.assertTrue("walk" in dir(query))
@@ -463,11 +479,3 @@ class TestMisc(FrappeTestCase):
 
 		DocType = Table("DocType")
 		self.assertEqual(DocType.get_sql(), "DocType")
-
-	def test_error_on_query_class(self):
-		import frappe.query_builder.utils
-
-		frappe.query_builder.utils.get_type_hints = lambda x: {"return": None}
-
-		with self.assertRaises(frappe.query_builder.utils.BuilderIdentificationFailed):
-			frappe.query_builder.utils.patch_query_execute()

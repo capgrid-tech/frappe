@@ -15,7 +15,7 @@
 
 	.grid-static-col {
 		.static-area.reqd:after {
-			content: ' *';
+			content: " *";
 			color: var(--red-400);
 		}
 	}
@@ -44,16 +44,11 @@
 }
 
 // hide row index in 6/4 column child tables
-.form-column.col-sm-6, .form-column.col-sm-4 {
+.form-column.col-sm-6,
+.form-column.col-sm-4 {
 	.form-grid {
 		.row-index {
 			display: none;
-		}
-
-		.btn-open-row {
-			.edit-grid-row {
-				display: none;
-			}
 		}
 	}
 }
@@ -118,6 +113,15 @@
 
 .grid-row-check {
 	margin-top: 2px;
+
+	&::after {
+		// Extend the checkbox's clickable area
+		display: block;
+		content: "";
+		inset: -8px;
+		position: absolute;
+		opacity: 0;
+	}
 }
 
 .template-row-index {
@@ -150,6 +154,7 @@
 .grid-row > .row {
 	.col:last-child {
 		border-right: none;
+		min-width: 0;
 	}
 
 	.col {
@@ -194,7 +199,8 @@
 			height: 37px !important;
 		}
 
-		.form-control {
+		.form-control,
+		.ql-editor {
 			border-radius: 0px;
 			border: 0px;
 			padding-top: 8px;
@@ -247,7 +253,8 @@
 		margin-left: 1rem;
 	}
 
-	.grid-static-col[data-fieldtype="Code"], .grid-static-col[data-fieldtype="HTML Editor"] {
+	.grid-static-col[data-fieldtype="Code"],
+	.grid-static-col[data-fieldtype="HTML Editor"] {
 		overflow: hidden;
 
 		.static-area {
@@ -262,6 +269,14 @@
 
 	.grid-static-col[data-fieldtype="Text Editor"] {
 		overflow: hidden;
+		margin: 0 !important;
+
+		.ql-editor {
+			overflow-y: auto !important;
+			min-height: 0 !important;
+			max-height: unset !important;
+			line-height: 1.3 !important;
+		}
 	}
 }
 
@@ -321,7 +336,7 @@
 	overflow: hidden;
 	height: 0;
 	opacity: 0;
-	z-index: 1051;
+	z-index: 1021;
 	border-radius: var(--border-radius-md);
 	@include base-grid();
 
@@ -362,6 +377,10 @@
 	}
 }
 
+#freeze.grid-form {
+	z-index: 1020;
+}
+
 .recorder-form-in-grid {
 	z-index: 0;
 	@include base-grid();
@@ -400,7 +419,8 @@
 	}
 }
 
-.grid-buttons, .grid-bulk-actions {
+.grid-buttons,
+.grid-bulk-actions {
 	display: inline-flex;
 }
 
@@ -408,7 +428,8 @@
 	padding: 0;
 }
 
-.grid-footer, .grid-custom-buttons {
+.grid-footer,
+.grid-custom-buttons {
 	padding: var(--padding-sm) 0px;
 	background-color: var(--fg-color);
 	.btn {
@@ -465,8 +486,7 @@
 }
 
 .grid-footer-toolbar {
-	padding: var(--padding-md) var(--padding-sm) var(--padding-xs)
-		var(--padding-sm);
+	padding: var(--padding-md) var(--padding-sm) var(--padding-xs) var(--padding-sm);
 	// border-top: 1px solid var(--border-color);
 	span {
 		margin-right: var(--margin-xs);
@@ -513,10 +533,10 @@
 
 @media (min-width: map-get($grid-breakpoints, "md")) {
 	.form-grid-container {
-		overflow-x: unset!important;
+		overflow-x: unset !important;
 
 		.form-grid {
-			position: unset!important;
+			position: unset !important;
 		}
 	}
 }
@@ -527,4 +547,3 @@
 		padding-right: 0 !important;
 	}
 }
-

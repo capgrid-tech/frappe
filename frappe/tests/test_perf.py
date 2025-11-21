@@ -16,8 +16,11 @@ query. This test can be written like this.
 >>> 		get_controller("User")
 
 """
+import gc
+import sys
 import time
 import unittest
+from unittest.mock import patch
 
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
@@ -27,6 +30,7 @@ from frappe.model.base_document import get_controller
 from frappe.query_builder.utils import db_type_is
 from frappe.tests.test_query_builder import run_only_if
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import cint
 from frappe.website.path_resolver import PathResolver
 
 
@@ -50,6 +54,18 @@ class TestPerformance(FrappeTestCase):
 		with self.assertQueryCount(0):
 			frappe.get_meta("User")
 
+	def test_permitted_fieldnames(self):
+		frappe.clear_cache()
+
+		doc = frappe.new_doc("Prepared Report")
+		# load permitted fieldnames once
+		doc.permitted_fieldnames
+
+		with patch("frappe.model.base_document.get_permitted_fields") as mocked:
+			doc.as_dict()
+			# get_permitted_fields should not be called again
+			mocked.assert_not_called()
+
 	def test_set_value_query_count(self):
 		frappe.db.set_value("User", "Administrator", "interest", "Nothing")
 
@@ -65,10 +81,31 @@ class TestPerformance(FrappeTestCase):
 			)
 
 	def test_controller_caching(self):
-
 		get_controller("User")
 		with self.assertQueryCount(0):
 			get_controller("User")
+
+	def test_get_value_limits(self):
+		# check both dict and list style filters
+		filters = [{"enabled": 1}, [["enabled", "=", 1]]]
+
+		# Warm up code, becase get_list uses meta.
+		frappe.db.get_values("User", filters=filters[1], limit=1)
+		for filter in filters:
+			with self.assertRowsRead(1):
+				self.assertEqual(1, len(frappe.db.get_values("User", filters=filter, limit=1)))
+			with self.assertRowsRead(2):
+				self.assertEqual(2, len(frappe.db.get_values("User", filters=filter, limit=2)))
+
+			self.assertEqual(
+				len(frappe.db.get_values("User", filters=filter)), frappe.db.count("User", filter)
+			)
+
+			with self.assertRowsRead(1):
+				frappe.db.get_value("User", filters=filter)
+
+			with self.assertRowsRead(1):
+				frappe.db.exists("User", filter)
 
 	def test_db_value_cache(self):
 		"""Link validation if repeated should just use db.value_cache, hence no extra queries"""
@@ -105,7 +142,7 @@ class TestPerformance(FrappeTestCase):
 		self.assertGreaterEqual(
 			rps,
 			EXPECTED_RPS * (1 - FAILURE_THREASHOLD),
-			f"Possible performance regression in basic /api/Resource list  requests",
+			"Possible performance regression in basic /api/Resource list  requests",
 		)
 
 	@unittest.skip("Not implemented")
@@ -115,3 +152,28 @@ class TestPerformance(FrappeTestCase):
 			PathResolver(path).resolve()
 			with self.assertQueryCount(1):
 				PathResolver(path).resolve()
+
+	def test_consistent_build_version(self):
+		from frappe.utils import get_build_version
+
+		self.assertEqual(get_build_version(), get_build_version())
+
+	def test_no_ifnull_checks(self):
+		query = frappe.get_all("DocType", {"autoname": ("is", "set")}, run=0).lower()
+		self.assertNotIn("coalesce", query)
+		self.assertNotIn("ifnull", query)
+
+	def test_no_stale_ref_sql(self):
+		"""frappe.db.sql should not hold any internal references to result set.
+
+		pymysql stores results internally. If your code reads a lot and doesn't make another
+		query, for that entire duration there's copy of result consuming memory in internal
+		attributes of pymysql.
+		We clear it manually, this test ensures that it actually works.
+		"""
+
+		query = "select * from tabUser"
+		for kwargs in ({}, {"as_dict": True}, {"as_list": True}):
+			result = frappe.db.sql(query, **kwargs)
+			self.assertEqual(sys.getrefcount(result), 2)  # Note: This always returns +1
+			self.assertFalse(gc.get_referrers(result))

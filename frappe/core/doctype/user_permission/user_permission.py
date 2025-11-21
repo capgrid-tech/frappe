@@ -60,6 +60,10 @@ class UserPermission(Document):
 			frappe.throw(_("{0} has already assigned default value for {1}.").format(ref_link, self.allow))
 
 
+def send_user_permissions(bootinfo):
+	bootinfo.user["user_permissions"] = get_user_permissions()
+
+
 @frappe.whitelist()
 def get_user_permissions(user=None):
 	"""Get all users permissions for the user as a dict of doctype"""
@@ -100,7 +104,6 @@ def get_user_permissions(user=None):
 			fields=["allow", "for_value", "applicable_for", "is_default", "hide_descendants"],
 			filters=dict(user=user),
 		):
-
 			meta = frappe.get_meta(perm.allow)
 			add_doc_to_perm(perm, perm.for_value, perm.is_default)
 
@@ -245,9 +248,7 @@ def add_user_permissions(data):
 		return 1
 	elif len(data.applicable_doctypes) > 0 and data.apply_to_all_doctypes != 1:
 		remove_apply_to_all(data.user, data.doctype, data.docname)
-		update_applicable(
-			perm_applied_docs, data.applicable_doctypes, data.user, data.doctype, data.docname
-		)
+		update_applicable(perm_applied_docs, data.applicable_doctypes, data.user, data.doctype, data.docname)
 		for applicable in data.applicable_doctypes:
 			if applicable not in perm_applied_docs:
 				insert_user_perm(

@@ -22,9 +22,7 @@ class NavbarSettings(Document):
 			if item.is_standard
 		]
 
-		after_save_items = [
-			item for item in self.help_dropdown + self.settings_dropdown if item.is_standard
-		]
+		after_save_items = [item for item in self.help_dropdown + self.settings_dropdown if item.is_standard]
 
 		if not frappe.flags.in_patch and (len(before_save_items) > len(after_save_items)):
 			frappe.throw(_("Please hide the standard navbar items instead of deleting them"))
@@ -33,7 +31,10 @@ class NavbarSettings(Document):
 def get_app_logo():
 	app_logo = frappe.db.get_single_value("Navbar Settings", "app_logo", cache=True)
 	if not app_logo:
-		app_logo = frappe.get_hooks("app_logo_url")[-1]
+		logos = frappe.get_hooks("app_logo_url")
+		app_logo = logos[0]
+		if len(logos) == 2:
+			app_logo = logos[1]
 
 	return app_logo
 

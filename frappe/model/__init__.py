@@ -3,6 +3,7 @@
 
 # model __init__.py
 import frappe
+from frappe import _
 
 data_fieldtypes = (
 	"Currency",
@@ -132,6 +133,25 @@ log_types = (
 	"Console Log",
 )
 
+std_fields = [
+	{"fieldname": "name", "fieldtype": "Link", "label": "ID"},
+	{"fieldname": "owner", "fieldtype": "Link", "label": "Created By", "options": "User"},
+	{"fieldname": "idx", "fieldtype": "Int", "label": "Index"},
+	{"fieldname": "creation", "fieldtype": "Datetime", "label": "Created On"},
+	{"fieldname": "modified", "fieldtype": "Datetime", "label": "Last Updated On"},
+	{
+		"fieldname": "modified_by",
+		"fieldtype": "Link",
+		"label": "Last Updated By",
+		"options": "User",
+	},
+	{"fieldname": "_user_tags", "fieldtype": "Data", "label": "Tags"},
+	{"fieldname": "_liked_by", "fieldtype": "Data", "label": "Liked By"},
+	{"fieldname": "_comments", "fieldtype": "Text", "label": "Comments"},
+	{"fieldname": "_assign", "fieldtype": "Text", "label": "Assigned To"},
+	{"fieldname": "docstatus", "fieldtype": "Int", "label": "Document Status"},
+]
+
 
 def delete_fields(args_dict, delete=0):
 	"""
@@ -190,7 +210,12 @@ def delete_fields(args_dict, delete=0):
 
 
 def get_permitted_fields(
-	doctype: str, parenttype: str | None = None, user: str | None = None
+	doctype: str,
+	parenttype: str | None = None,
+	user: str | None = None,
+	permission_type: str | None = None,
+	*,
+	ignore_virtual=False,
 ) -> list[str]:
 	meta = frappe.get_meta(doctype)
 	valid_columns = meta.get_valid_columns()
@@ -202,7 +227,18 @@ def get_permitted_fields(
 	if set(valid_columns).issubset(default_fields):
 		return valid_columns
 
-	if permitted_fields := meta.get_permitted_fieldnames(parenttype=parenttype, user=user):
+	if permission_type is None:
+		permission_type = "select" if frappe.only_has_select_perm(doctype, user=user) else "read"
+
+	if permitted_fields := meta.get_permitted_fieldnames(
+		parenttype=parenttype,
+		user=user,
+		permission_type=permission_type,
+		with_virtual_fields=not ignore_virtual,
+	):
+		if permission_type == "select":
+			return permitted_fields
+
 		meta_fields = meta.default_fields.copy()
 		optional_meta_fields = [x for x in optional_fields if x in valid_columns]
 
@@ -212,3 +248,7 @@ def get_permitted_fields(
 		return meta_fields + permitted_fields + optional_meta_fields
 
 	return []
+
+
+def is_default_field(fieldname: str) -> bool:
+	return fieldname in default_fields

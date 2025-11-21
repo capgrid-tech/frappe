@@ -24,22 +24,28 @@ frappe.ui.form.on("Web Form", {
 	},
 
 	refresh: function (frm) {
-		// show is-standard only if developer mode
-		frm.get_field("is_standard").toggle(frappe.boot.developer_mode);
-
 		if (frm.doc.is_standard && !frappe.boot.developer_mode) {
-			frm.set_read_only();
-			frm.disable_save();
+			frm.disable_form();
+			frappe.show_alert(
+				__("Standard Web Forms can not be modified, duplicate the Web Form instead.")
+			);
 		}
 		render_list_settings_message(frm);
 
 		frm.trigger("set_fields");
 		frm.trigger("add_get_fields_button");
 		frm.trigger("add_publish_button");
+		frm.trigger("render_condition_table");
 	},
 
 	login_required: function (frm) {
 		render_list_settings_message(frm);
+	},
+
+	anonymous: function (frm) {
+		if (frm.doc.anonymous) {
+			frm.set_value("login_required", 0);
+		}
 	},
 
 	validate: function (frm) {
@@ -111,11 +117,26 @@ frappe.ui.form.on("Web Form", {
 	set_fields(frm) {
 		let doc = frm.doc;
 
-		let update_options = (options) => {
-			[frm.fields_dict.web_form_fields.grid, frm.fields_dict.list_columns.grid].forEach(
-				(obj) => {
-					obj.update_docfield_property("fieldname", "options", options);
-				}
+		let as_select_option = (df) => ({
+			label: df.label,
+			value: df.fieldname,
+		});
+		let update_options = (fields) => {
+			frm.fields_dict.web_form_fields.grid.update_docfield_property(
+				"fieldname",
+				"options",
+				fields.map(as_select_option)
+			);
+			frm.fields_dict.list_columns.grid.update_docfield_property(
+				"fieldname",
+				"options",
+				fields
+					.filter(
+						(df) =>
+							!frappe.model.no_value_type.includes(df.fieldtype) &&
+							df.is_virtual !== 1
+					)
+					.map(as_select_option)
 			);
 		};
 
@@ -125,14 +146,12 @@ frappe.ui.form.on("Web Form", {
 			return;
 		}
 
-		update_options([`Fetching fields from ${doc.doc_type}...`]);
+		update_options([
+			{ label: __("Fetching fields from {0}...", [doc.doc_type]), fieldname: "" },
+		]);
 
 		get_fields_for_doctype(doc.doc_type).then((fields) => {
-			let as_select_option = (df) => ({
-				label: df.label,
-				value: df.fieldname,
-			});
-			update_options(fields.map(as_select_option));
+			update_options(fields);
 
 			let currency_fields = fields
 				.filter((df) => ["Currency", "Float"].includes(df.fieldtype))
@@ -140,7 +159,7 @@ frappe.ui.form.on("Web Form", {
 			if (!currency_fields.length) {
 				currency_fields = [
 					{
-						label: `No currency fields in ${doc.doc_type}`,
+						label: __("No currency fields in {0}", [doc.doc_type]),
 						value: "",
 						disabled: true,
 					},
@@ -163,6 +182,113 @@ frappe.ui.form.on("Web Form", {
 
 	allow_multiple: function (frm) {
 		frm.doc.allow_multiple && frm.set_value("show_list", 1);
+	},
+
+	before_save: function (frm) {
+		let static_filters = JSON.parse(frm.doc.condition_json || "[]");
+		frm.set_value("condition_json", JSON.stringify(static_filters));
+		frm.trigger("render_condition_table");
+	},
+
+	render_condition_table: function (frm) {
+		let wrapper = $(frm.get_field("condition_json").wrapper).empty();
+		let table = $(`
+			<style>
+			.table-bordered th, .table-bordered td {
+				border: none;
+				border-right: 1px solid var(--border-color);
+			}
+			.table-bordered td {
+				border-top: 1px solid var(--border-color);
+			}
+			.table thead th {
+				border-bottom: none;
+				font-weight: var(--weight-regular);
+			}
+			tr th:last-child, tr td:last-child{
+				border-right: none;
+			}
+			thead {
+				font-size: var(--text-sm);
+				color: var(--gray-600);
+				background-color: var(--subtle-fg);
+			}
+			thead th:first-child {
+				border-top-left-radius: 9px;
+			}
+			thead th:last-child {
+				border-top-right-radius: 9px;
+			}
+			</style>
+
+			<table class="table table-bordered" style="cursor:pointer; margin:0px; border-radius: 10px; border-spacing: 0; border-collapse: separate;">
+			<thead>
+				<tr>
+					<th>${__("Filter")}</th>
+					<th style="width: 20%">${__("Condition")}</th>
+					<th>${__("Value")}</th>
+				</tr>
+			</thead>
+			<tbody></tbody>
+		</table>`).appendTo(wrapper);
+		$(`<p class="text-muted small mt-2">${__("Click table to edit")}</p>`).appendTo(wrapper);
+
+		let filters = JSON.parse(frm.doc.condition_json || "[]");
+		let filters_set = false;
+
+		let fields = [
+			{
+				fieldtype: "HTML",
+				fieldname: "filter_area",
+			},
+		];
+
+		if (filters?.length) {
+			filters.forEach((filter) => {
+				const filter_row = $(`<tr>
+							<td>${filter[1]}</td>
+							<td>${filter[2] || ""}</td>
+							<td>${filter[3]}</td>
+						</tr>`);
+
+				table.find("tbody").append(filter_row);
+			});
+			filters_set = true;
+		}
+
+		if (!filters_set) {
+			const filter_row = $(`<tr><td colspan="3" class="text-muted text-center">
+				${__("Click to Set Filters")}</td></tr>`);
+			table.find("tbody").append(filter_row);
+		}
+
+		table.on("click", () => {
+			let dialog = new frappe.ui.Dialog({
+				title: __("Set Filters"),
+				fields: fields,
+				primary_action: function () {
+					let values = this.get_values();
+					if (values) {
+						this.hide();
+						let filters = frm.filter_group.get_filters();
+						frm.set_value("condition_json", JSON.stringify(filters));
+						frm.trigger("render_condition_table");
+					}
+				},
+				primary_action_label: "Set",
+			});
+
+			frm.filter_group = new frappe.ui.FilterGroup({
+				parent: dialog.get_field("filter_area").$wrapper,
+				doctype: frm.doc.doc_type,
+				on_change: () => {},
+			});
+			filters && frm.filter_group.add_filters_to_filter_group(filters);
+
+			dialog.show();
+
+			dialog.set_values(filters);
+		});
 	},
 });
 

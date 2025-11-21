@@ -30,6 +30,8 @@ export default class WebForm extends frappe.ui.FieldGroup {
 			this.setup_discard_action();
 		}
 
+		this.setup_delete_action();
+
 		this.setup_previous_next_button();
 		this.toggle_section();
 
@@ -44,6 +46,7 @@ export default class WebForm extends frappe.ui.FieldGroup {
 		let field = this.fields_dict[fieldname];
 		field.df.change = () => {
 			handler(field, field.value);
+			this.refresh_dependency();
 			this.make_form_dirty();
 		};
 	}
@@ -53,6 +56,7 @@ export default class WebForm extends frappe.ui.FieldGroup {
 		this.fields.forEach((field) => {
 			if (!field.change) {
 				field.change = () => {
+					this.refresh_dependency();
 					this.make_form_dirty();
 				};
 			}
@@ -172,6 +176,10 @@ export default class WebForm extends frappe.ui.FieldGroup {
 		$(".web-form-footer .discard-btn").on("click", () => this.discard_form());
 	}
 
+	setup_delete_action() {
+		$(".web-form-footer .delete-btn").on("click", () => this.delete_form());
+	}
+
 	discard_form() {
 		let path = window.location.href;
 		// remove new or edit after last / from url
@@ -190,10 +198,28 @@ export default class WebForm extends frappe.ui.FieldGroup {
 		return false;
 	}
 
+	delete_form() {
+		const path = window.location.href;
+		frappe.confirm(__("Are you sure you want to delete this record?"), () => {
+			frappe.call({
+				method: "frappe.website.doctype.web_form.web_form.delete",
+				args: {
+					web_form_name: this.name,
+					docname: this.doc.name,
+				},
+				callback: () => {
+					frappe.msgprint(__("Deleted!"));
+					window.location.href = path.substring(0, path.lastIndexOf("/"));
+				},
+			});
+		});
+		return false;
+	}
+
 	validate_section() {
 		if (this.allow_incomplete) return true;
 
-		let fields = $(`.form-page:eq(${this.current_section}) .form-control`);
+		let fields = $(`${this.get_page(this.current_section)} .form-control`);
 		let errors = [];
 		let invalid_values = [];
 
@@ -203,7 +229,7 @@ export default class WebForm extends frappe.ui.FieldGroup {
 
 			field = this.fields_dict[fieldname];
 
-			if (field.get_value) {
+			if (field && field.get_value) {
 				let value = field.get_value();
 				if (
 					field.df.reqd &&
@@ -304,8 +330,8 @@ export default class WebForm extends frappe.ui.FieldGroup {
 	is_next_section_empty(section) {
 		if (section + 1 > this.page_breaks.length + 1) return true;
 
-		let _section = $(`.form-page:eq(${section + 1})`);
-		let visible_controls = _section.find(".frappe-control:not(.hide-control)");
+		let _page = $(`${this.get_page(section + 1)}`);
+		let visible_controls = _page.find(".frappe-control:not(.hide-control)");
 
 		return !visible_controls.length ? true : false;
 	}
@@ -313,8 +339,8 @@ export default class WebForm extends frappe.ui.FieldGroup {
 	is_previous_section_empty(section) {
 		if (section - 1 > this.page_breaks.length + 1) return true;
 
-		let _section = $(`.form-page:eq(${section - 1})`);
-		let visible_controls = _section.find(".frappe-control:not(.hide-control)");
+		let _page = $(`${this.get_page(section - 1)}`);
+		let visible_controls = _page.find(".frappe-control:not(.hide-control)");
 
 		return !visible_controls.length ? true : false;
 	}
@@ -333,14 +359,18 @@ export default class WebForm extends frappe.ui.FieldGroup {
 		this.current_section == 0 ? $(".btn-previous").hide() : $(".btn-previous").show();
 	}
 
+	get_page(idx) {
+		return idx > 0 ? `.page-break:eq(${idx - 1})` : `.form-page:eq(${idx})`;
+	}
+
 	show_form_page() {
-		$(`.form-page:eq(${this.current_section})`).show();
+		$(this.get_page(this.current_section)).show();
 	}
 
 	hide_form_pages() {
 		for (let idx = 0; idx <= this.page_breaks.length; idx++) {
 			if (idx !== this.current_section) {
-				$(`.form-page:eq(${idx})`).hide();
+				$(this.get_page(idx)).hide();
 			}
 		}
 	}

@@ -32,6 +32,8 @@
   "links",
   "quick_lists_tab",
   "quick_lists",
+  "custom_blocks_tab",
+  "custom_blocks",
   "roles_tab",
   "roles"
  ],
@@ -192,6 +194,17 @@
    "fieldtype": "Table",
    "label": "Number Cards",
    "options": "Workspace Number Card"
+  },
+  {
+   "fieldname": "custom_blocks_tab",
+   "fieldtype": "Tab Break",
+   "label": "Custom Blocks"
+  },
+  {
+   "fieldname": "custom_blocks",
+   "fieldtype": "Table",
+   "label": "Custom Blocks",
+   "options": "Workspace Custom Block"
   }
  ],
  "links": [],

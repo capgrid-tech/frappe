@@ -7,16 +7,17 @@
 {% block breadcrumbs %}{% endblock %}
 
 {% block header %}
-	{% if banner_image %}
+	{% if webform_banner_image %}
 		<!-- banner image -->
-		<img class="web-form-banner-image" src="{{ banner_image }}" alt="Banner Image">
+		<img class="web-form-banner-image" src="{{ webform_banner_image }}" alt="Banner Image">
 	{% endif %}
 {% endblock %}
 
 {% macro header_buttons() %}
+	{% block header_buttons %}
 	{% if allow_edit and in_view_mode %}
 		<!-- edit button -->
-		<a href="/{{ route }}/{{ doc_name }}/edit" class="edit-button btn btn-default btn-sm">{{ _("Edit Response", null, "Button in web form") }}</a>
+		<a href="/{{ route }}/{{ doc_name }}/edit" class="edit-button btn btn-default btn-sm">{{ _("Edit Response", context="Button in web form") }}</a>
 	{% endif %}
 
 	{% if allow_print and in_view_mode %}
@@ -26,28 +27,38 @@
 			<svg class="icon icon-sm"><use href="#icon-printer"></use></svg>
 		</a>
 	{% endif %}
+	{% endblock %}
 {% endmacro %}
 
 {% macro action_buttons() %}
+	{% block actions_buttons %}
 	<div class="left-area"></div>
 	<div class="center-area paging"></div>
 	<div class="right-area">
 		{% if not in_view_mode %}
 			<!-- discard button -->
 			<button class="discard-btn btn btn-default btn-sm">
-				{{ _("Discard", null, "Button in web form") }}
+				{{ _("Discard", context="Button in web form") }}
 			</button>
 			<!-- submit button -->
-			<button type="submit" class="submit-btn btn btn-primary btn-sm ml-2">{{ button_label or _("Submit", null, "Button in web form") }}</button>
+			<button type="submit" class="submit-btn btn btn-primary btn-sm ml-2">{{ _(button_label, context="Button in web form") or _("Submit", context="Button in web form") }}</button>
 		{% endif %}
+		{% if has_delete_permission %}
+			<!-- delete button -->
+			<button type="button" class="delete-btn btn btn-default btn-sm">
+				{{ _("Delete", context="Button in web form") }}
+			</button>
+		{% endif %}
+
 	</div>
+	{% endblock %}
 {% endmacro %}
 
 {% block page_content %}
 	<!-- web form container -->
 	<div class="web-form-container">
 		<!-- breadcrumb -->
-		{% if not banner_image and has_header and login_required and show_list %}
+		{% if not webform_banner_image and has_header and login_required and show_list %}
 			{% include "templates/includes/breadcrumbs.html" %}
 			{% else %}
 				<div style="height: 3rem"></div>
@@ -55,7 +66,7 @@
 
 		<!-- header -->
 		<div class="web-form-header">
-			{% if banner_image and has_header and login_required and show_list %}
+			{% if webform_banner_image and has_header and login_required and show_list %}
 				{% include "templates/includes/breadcrumbs.html" %}
 			{% endif %}
 			<div class="web-form-head">
@@ -68,7 +79,7 @@
 							<h1 class="ellipsis">{{ _(title) }}</h1>
 						{% endif %}
 					</div>
-					<span class="indicator-pill orange hide">Not Saved</span>
+					<span class="indicator-pill orange hide">{{ _("Not Saved") }}</span>
 					<div class="web-form-actions">
 						{{ header_buttons() }}
 					</div>
@@ -137,19 +148,16 @@
 			{% if success_url %}
 				<div class="success_url_message">
 					<p>
-						<span>Click on this </span>
-						<a href="{{ success_url }}">{{_("URL")}}</a>
-						<span> if you are not redirected within </span>
-						<span class="time">5</span>
-						<span> seconds.</span>
+						{% set success_link = '<a href="{0}">{1}</a>'.format(success_url, _("Click here")) %}
+						{{ _("{0} if you are not redirected within {1} seconds").format(success_link, '<span class="time">5</span>') }}
 					</p>
 				</div>
 			{% else %}
 				{% if show_list %}
-					<a href="/{{ route }}/list" class="show-list-button btn btn-default btn-md">{{ _("See previous responses", null, "Button in web form") }}</a>
+					<a href="/{{ route }}/list" class="show-list-button btn btn-default btn-md">{{ _("See previous responses", context="Button in web form") }}</a>
 				{% endif %}
 				{% if not login_required or allow_multiple %}
-					<a href="/{{ route }}/new" class="new-btn btn btn-default btn-md">{{ _("Submit another response", null, "Button in web form") }}</a>
+					<a href="/{{ route }}/new" class="new-btn btn btn-default btn-md">{{ _("Submit another response", context="Button in web form") }}</a>
 				{% endif %}
 			{% endif %}
 		</div>

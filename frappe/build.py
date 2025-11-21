@@ -4,15 +4,13 @@ import os
 import re
 import shutil
 import subprocess
+from contextlib import suppress
 from distutils.spawn import find_executable
 from subprocess import getoutput
 from tempfile import mkdtemp, mktemp
 from urllib.parse import urlparse
 
 import click
-import psutil
-from requests import head
-from requests.exceptions import HTTPError
 from semantic_version import Version
 
 import frappe
@@ -28,7 +26,7 @@ class AssetsNotDownloadedError(Exception):
 	pass
 
 
-class AssetsDontExistError(HTTPError):
+class AssetsDontExistError(Exception):
 	pass
 
 
@@ -79,6 +77,8 @@ def build_missing_files():
 
 
 def get_assets_link(frappe_head) -> str:
+	import requests
+
 	tag = getoutput(
 		r"cd ../apps/frappe && git show-ref --tags -d | grep %s | sed -e 's,.*"
 		r" refs/tags/,,' -e 's/\^{}//'" % frappe_head
@@ -90,7 +90,7 @@ def get_assets_link(frappe_head) -> str:
 	else:
 		url = f"http://assets.frappeframework.com/{frappe_head}.tar.gz"
 
-	if not head(url):
+	if not requests.head(url):
 		reference = f"Release {tag}" if tag else f"Commit {frappe_head}"
 		raise AssetsDontExistError(f"Assets for {reference} don't exist")
 
@@ -202,7 +202,7 @@ def symlink(target, link_name, overwrite=False):
 		if os.path.isdir(link_name):
 			raise IsADirectoryError(f"Cannot symlink over existing directory: '{link_name}'")
 		try:
-			os.replace(temp_link_name, link_name)
+			shutil.move(temp_link_name, link_name)
 		except AttributeError:
 			os.renames(temp_link_name, link_name)
 	except Exception:
@@ -256,6 +256,9 @@ def bundle(
 	frappe_app_path = frappe.get_app_path("frappe", "..")
 	frappe.commands.popen(command, cwd=frappe_app_path, env=get_node_env(), raise_err=True)
 
+	with suppress(Exception):
+		frappe.cache().flushall()
+
 
 def watch(apps=None):
 	"""watch and rebuild if necessary"""
@@ -291,6 +294,8 @@ def get_node_env():
 
 
 def get_safe_max_old_space_size():
+	import psutil
+
 	safe_max_old_space_size = 0
 	try:
 		total_memory = psutil.virtual_memory().total / (1024 * 1024)
@@ -374,9 +379,7 @@ def make_asset_dirs(hard_link=False):
 	symlinks = generate_assets_map()
 
 	for source, target in symlinks.items():
-		start_message = unstrip(
-			f"{'Copying assets from' if hard_link else 'Linking'} {source} to {target}"
-		)
+		start_message = unstrip(f"{'Copying assets from' if hard_link else 'Linking'} {source} to {target}")
 		fail_message = unstrip(f"Cannot {'copy' if hard_link else 'link'} {source} to {target}")
 
 		# Used '\r' instead of '\x1b[1K\r' to print entire lines in smaller terminal sizes

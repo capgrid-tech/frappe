@@ -14,13 +14,7 @@ def make_mapped_doc(method, source_name, selected_children=None, args=None):
 	Sets selected_children as flags for the `get_mapped_doc` method.
 
 	Called from `open_mapped_doc` from create_new.js"""
-
-	for hook in frappe.get_hooks("override_whitelisted_methods", {}).get(method, []):
-		# override using the first hook
-		method = hook
-		break
-
-	method = frappe.get_attr(method)
+	method = frappe.get_attr(frappe.override_whitelisted_method(method))
 
 	if method not in frappe.whitelisted:
 		raise frappe.PermissionError
@@ -43,8 +37,7 @@ def map_docs(method, source_names, target_doc, args=None):
 
 	:param args: Args as string to pass to the mapper method
 	E.g. args: "{ 'supplier': 'XYZ' }"'''
-
-	method = frappe.get_attr(method)
+	method = frappe.get_attr(frappe.override_whitelisted_method(method))
 	if method not in frappe.whitelisted:
 		raise frappe.PermissionError
 
@@ -62,8 +55,8 @@ def get_mapped_doc(
 	postprocess=None,
 	ignore_permissions=False,
 	ignore_child_tables=False,
+	cached=False,
 ):
-
 	apply_strict_user_permissions = frappe.get_system_settings("apply_strict_user_permissions")
 
 	# main
@@ -79,7 +72,10 @@ def get_mapped_doc(
 	):
 		target_doc.raise_no_permission_to("create")
 
-	source_doc = frappe.get_doc(from_doctype, from_docname)
+	if cached:
+		source_doc = frappe.get_cached_doc(from_doctype, from_docname)
+	else:
+		source_doc = frappe.get_doc(from_doctype, from_docname)
 
 	if not ignore_permissions:
 		if not source_doc.has_permission("read"):
@@ -132,6 +128,9 @@ def get_mapped_doc(
 							True if target_doc.get(target_parentfield) else False
 						)
 
+					if table_map.get("ignore"):
+						continue
+
 					if table_map.get("add_if_empty") and row_exists_for_parentfield.get(target_parentfield):
 						continue
 
@@ -143,13 +142,10 @@ def get_mapped_doc(
 	if postprocess:
 		postprocess(source_doc, target_doc)
 
+	target_doc.run_method("after_mapping", source_doc)
 	target_doc.set_onload("load_after_mapping", True)
 
-	if (
-		apply_strict_user_permissions
-		and not ignore_permissions
-		and not target_doc.has_permission("create")
-	):
+	if apply_strict_user_permissions and not ignore_permissions and not target_doc.has_permission("create"):
 		target_doc.raise_no_permission_to("create")
 
 	return target_doc

@@ -17,13 +17,14 @@ EVENT_MAP = {
 	"after_delete": "After Delete",
 	"before_update_after_submit": "Before Save (Submitted Document)",
 	"on_update_after_submit": "After Save (Submitted Document)",
+	"before_print": "Before Print",
 	"on_payment_authorized": "On Payment Authorization",
 }
 
 
 def run_server_script_for_doc_event(doc, event):
 	# run document event method
-	if not event in EVENT_MAP:
+	if event not in EVENT_MAP:
 		return
 
 	if frappe.flags.in_install:

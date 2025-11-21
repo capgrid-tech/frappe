@@ -37,14 +37,8 @@ def new_language(context, lang_code, app):
 	frappe.connect(site=context["sites"][0])
 	frappe.translate.write_translations_file(app, lang_code)
 
-	print(
-		"File created at ./apps/{app}/{app}/translations/{lang_code}.csv".format(
-			app=app, lang_code=lang_code
-		)
-	)
-	print(
-		"You will need to add the language in frappe/geo/languages.json, if you haven't done it already."
-	)
+	print(f"File created at ./apps/{app}/{app}/translations/{lang_code}.csv")
+	print("You will need to add the language in frappe/geo/languages.json, if you haven't done it already.")
 
 
 @click.command("get-untranslated")
@@ -102,10 +96,28 @@ def import_translations(context, lang, path):
 		frappe.destroy()
 
 
+@click.command("migrate-translations")
+@click.argument("source-app")
+@click.argument("target-app")
+@pass_context
+def migrate_translations(context, source_app, target_app):
+	"Migrate target-app-specific translations from source-app to target-app"
+	import frappe.translate
+
+	site = get_site(context)
+	try:
+		frappe.init(site=site)
+		frappe.connect()
+		frappe.translate.migrate_translations(source_app, target_app)
+	finally:
+		frappe.destroy()
+
+
 commands = [
 	build_message_files,
 	get_untranslated,
 	import_translations,
 	new_language,
 	update_translations,
+	migrate_translations,
 ]

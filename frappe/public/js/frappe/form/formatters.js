@@ -35,6 +35,7 @@ frappe.form.formatters = {
 	},
 	Data: function (value, df) {
 		if (df && df.options == "URL") {
+			if (!value) return;
 			return `<a href="${value}" title="Open Link" target="_blank">${value}</a>`;
 		}
 		value = value == null ? "" : value;
@@ -79,7 +80,7 @@ frappe.form.formatters = {
 			docfield.precision ||
 			cint(frappe.boot.sysdefaults && frappe.boot.sysdefaults.float_precision) ||
 			2;
-		return frappe.form.formatters._right(flt(value, precision) + "%", options);
+		return frappe.form.formatters._right(format_number(value, null, precision) + "%", options);
 	},
 	Rating: function (value, docfield) {
 		let rating_html = "";
@@ -102,8 +103,15 @@ frappe.form.formatters = {
 	},
 	Currency: function (value, docfield, options, doc) {
 		var currency = frappe.meta.get_field_currency(docfield, doc);
-		var precision =
-			docfield.precision || cint(frappe.boot.sysdefaults.currency_precision) || 2;
+
+		let precision;
+		if (typeof docfield.precision == "number") {
+			precision = docfield.precision;
+		} else {
+			precision = cint(
+				docfield.precision || frappe.boot.sysdefaults.currency_precision || 2
+			);
+		}
 
 		// If you change anything below, it's going to hurt a company in UAE, a bit.
 		if (precision > 2) {
@@ -138,6 +146,10 @@ frappe.form.formatters = {
 		var original_value = value;
 		let link_title = frappe.utils.get_link_title(doctype, value);
 
+		if (link_title === value) {
+			link_title = null;
+		}
+
 		if (value && value.match && value.match(/^['"].*['"]$/)) {
 			value.replace(/^.(.*).$/, "$1");
 		}
@@ -160,20 +172,21 @@ frappe.form.formatters = {
 			return value.substring(1, value.length - 1);
 		}
 		if (docfield && docfield.link_onclick) {
-			return repl('<a onclick="%(onclick)s">%(value)s</a>', {
-				onclick: docfield.link_onclick.replace(/"/g, "&quot;"),
+			return repl('<a onclick="%(onclick)s" href="#">%(value)s</a>', {
+				onclick: docfield.link_onclick.replace(/"/g, "&quot;") + "; return false;",
 				value: value,
 			});
 		} else if (docfield && doctype) {
 			if (frappe.model.can_read(doctype)) {
-				return `<a
-					href="/app/${encodeURIComponent(frappe.router.slug(doctype))}/${encodeURIComponent(
-					original_value
-				)}"
-					data-doctype="${doctype}"
-					data-name="${original_value}"
-					data-value="${original_value}">
-					${__((options && options.label) || link_title || value)}</a>`;
+				const a = document.createElement("a");
+				a.href = `/app/${encodeURIComponent(
+					frappe.router.slug(doctype)
+				)}/${encodeURIComponent(original_value)}`;
+				a.dataset.doctype = doctype;
+				a.dataset.name = original_value;
+				a.dataset.value = original_value;
+				a.innerText = __((options && options.label) || link_title || value);
+				return a.outerHTML;
 			} else {
 				return link_title || value;
 			}
@@ -364,7 +377,13 @@ frappe.form.formatters = {
 		</div>`
 			: "";
 	},
+	Attach: format_attachment_url,
+	AttachImage: format_attachment_url,
 };
+
+function format_attachment_url(url) {
+	return url ? `<a href="${url}" target="_blank">${url}</a>` : "";
+}
 
 frappe.form.get_formatter = function (fieldtype) {
 	if (!fieldtype) fieldtype = "Data";
@@ -373,7 +392,7 @@ frappe.form.get_formatter = function (fieldtype) {
 
 frappe.format = function (value, df, options, doc) {
 	if (!df) df = { fieldtype: "Data" };
-	if (df.fieldname == "_user_tags") df.fieldtype = "Tag";
+	if (df.fieldname == "_user_tags") df = { ...df, fieldtype: "Tag" };
 	var fieldtype = df.fieldtype || "Data";
 
 	// format Dynamic Link as a Link

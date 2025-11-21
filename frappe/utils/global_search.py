@@ -55,8 +55,7 @@ def get_doctypes_with_global_search(with_child_tables=True):
 		doctypes = [
 			d.name
 			for d in global_search_doctypes
-			if module_app.get(frappe.scrub(d.module))
-			and module_app[frappe.scrub(d.module)] in installed_apps
+			if module_app.get(frappe.scrub(d.module)) and module_app[frappe.scrub(d.module)] in installed_apps
 		]
 
 		return doctypes
@@ -196,7 +195,9 @@ def get_children_data(doctype, meta):
 			child_search_fields.setdefault(child.options, search_fields)
 			child_fieldnames = get_selected_fields(child_meta, search_fields)
 			child_records = frappe.get_all(
-				child.options, fields=child_fieldnames, filters={"docstatus": ["!=", 1], "parenttype": doctype}
+				child.options,
+				fields=child_fieldnames,
+				filters={"docstatus": ["!=", 2], "parenttype": doctype},
 			)
 
 			for record in child_records:
@@ -220,15 +221,11 @@ def insert_values_for_multiple_docs(all_contents):
 			{
 				"mariadb": """INSERT IGNORE INTO `__global_search`
 				(doctype, name, content, published, title, route)
-				VALUES {} """.format(
-					", ".join(batch_values)
-				),
+				VALUES {} """.format(", ".join(batch_values)),
 				"postgres": """INSERT INTO `__global_search`
 				(doctype, name, content, published, title, route)
 				VALUES {}
-				ON CONFLICT("name", "doctype") DO NOTHING""".format(
-					", ".join(batch_values)
-				),
+				ON CONFLICT("name", "doctype") DO NOTHING""".format(", ".join(batch_values)),
 			}
 		)
 
@@ -242,11 +239,7 @@ def update_global_search(doc):
 	if frappe.local.conf.get("disable_global_search"):
 		return
 
-	if (
-		doc.docstatus > 1
-		or (doc.meta.has_field("enabled") and not doc.get("enabled"))
-		or doc.get("disabled")
-	):
+	if doc.docstatus > 1 or (doc.meta.has_field("enabled") and not doc.get("enabled")) or doc.get("disabled"):
 		return
 
 	content = []
@@ -444,7 +437,9 @@ def search(text, start=0, limit=20, doctype=""):
 	results = []
 	sorted_results = []
 
-	allowed_doctypes = get_doctypes_for_global_search()
+	allowed_doctypes = set(get_doctypes_for_global_search()) & set(frappe.get_user().get_can_read())
+	if not allowed_doctypes or (doctype and doctype not in allowed_doctypes):
+		return []
 
 	for word in set(text.split("&")):
 		word = word.strip()
@@ -452,17 +447,18 @@ def search(text, start=0, limit=20, doctype=""):
 			continue
 
 		global_search = frappe.qb.Table("__global_search")
-		rank = Match(global_search.content).Against(word).as_("rank")
+		rank = Match(global_search.content).Against(word)
 		query = (
 			frappe.qb.from_(global_search)
-			.select(global_search.doctype, global_search.name, global_search.content, rank)
+			.select(global_search.doctype, global_search.name, global_search.content, rank.as_("rank"))
+			.where(rank)
 			.orderby("rank", order=frappe.qb.desc)
 			.limit(limit)
 		)
 
 		if doctype:
 			query = query.where(global_search.doctype == doctype)
-		elif allowed_doctypes:
+		else:
 			query = query.where(global_search.doctype.isin(allowed_doctypes))
 
 		if cint(start) > 0:
@@ -474,7 +470,7 @@ def search(text, start=0, limit=20, doctype=""):
 
 	# sort results based on allowed_doctype's priority
 	for doctype in allowed_doctypes:
-		for index, r in enumerate(results):
+		for _index, r in enumerate(results):
 			if r.doctype == doctype and r.rank > 0.0:
 				try:
 					meta = frappe.get_meta(r.doctype)
@@ -515,9 +511,7 @@ def web_search(text, scope=None, start=0, limit=20):
 		mariadb_conditions += "MATCH(`content`) AGAINST ({} IN BOOLEAN MODE)".format(
 			frappe.db.escape("+" + text + "*")
 		)
-		postgres_conditions += 'TO_TSVECTOR("content") @@ PLAINTO_TSQUERY({})'.format(
-			frappe.db.escape(text)
-		)
+		postgres_conditions += f'TO_TSVECTOR("content") @@ PLAINTO_TSQUERY({frappe.db.escape(text)})'
 
 		values = {"scope": "".join([scope, "%"]) if scope else "", "limit": limit, "start": start}
 

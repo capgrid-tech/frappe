@@ -32,7 +32,6 @@ class PrintFormat(Document):
 			and not frappe.local.conf.get("developer_mode")
 			and not (frappe.flags.in_import or frappe.flags.in_test)
 		):
-
 			frappe.throw(frappe._("Standard Print Format cannot be updated"))
 
 		# old_doc_type is required for clearing item cache
@@ -47,9 +46,7 @@ class PrintFormat(Document):
 			validate_template(self.html)
 
 		if self.custom_format and self.raw_printing and not self.raw_commands:
-			frappe.throw(
-				_("{0} are required").format(frappe.bold(_("Raw Commands"))), frappe.MandatoryError
-			)
+			frappe.throw(_("{0} are required").format(frappe.bold(_("Raw Commands"))), frappe.MandatoryError)
 
 		if self.custom_format and not self.html and not self.raw_printing:
 			frappe.throw(_("{0} is required").format(frappe.bold(_("HTML"))), frappe.MandatoryError)
@@ -103,11 +100,10 @@ class PrintFormat(Document):
 
 
 @frappe.whitelist()
-def make_default(name):
+def make_default(name: str):
 	"""Set print format as default"""
-	frappe.has_permission("Print Format", "write")
-
 	print_format = frappe.get_doc("Print Format", name)
+	print_format.check_permission("write")
 
 	doctype = frappe.get_doc("DocType", print_format.doc_type)
 	if doctype.custom:

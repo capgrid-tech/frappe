@@ -49,9 +49,10 @@ def approve(*args, **kwargs):
 	r = frappe.request
 
 	try:
-		(scopes, frappe.flags.oauth_credentials,) = get_oauth_server().validate_authorization_request(
-			r.url, r.method, r.get_data(), r.headers
-		)
+		(
+			scopes,
+			frappe.flags.oauth_credentials,
+		) = get_oauth_server().validate_authorization_request(r.url, r.method, r.get_data(), r.headers)
 
 		headers, body, status = get_oauth_server().create_authorization_response(
 			uri=frappe.flags.oauth_credentials["redirect_uri"],
@@ -72,23 +73,20 @@ def approve(*args, **kwargs):
 
 @frappe.whitelist(allow_guest=True)
 def authorize(**kwargs):
-	success_url = "/api/method/frappe.integrations.oauth2.approve?" + encode_params(
-		sanitize_kwargs(kwargs)
-	)
+	success_url = "/api/method/frappe.integrations.oauth2.approve?" + encode_params(sanitize_kwargs(kwargs))
 	failure_url = frappe.form_dict["redirect_uri"] + "?error=access_denied"
 
 	if frappe.session.user == "Guest":
 		# Force login, redirect to preauth again.
 		frappe.local.response["type"] = "redirect"
-		frappe.local.response["location"] = "/login?" + encode_params(
-			{"redirect-to": frappe.request.url}
-		)
+		frappe.local.response["location"] = "/login?" + encode_params({"redirect-to": frappe.request.url})
 	else:
 		try:
 			r = frappe.request
-			(scopes, frappe.flags.oauth_credentials,) = get_oauth_server().validate_authorization_request(
-				r.url, r.method, r.get_data(), r.headers
-			)
+			(
+				scopes,
+				frappe.flags.oauth_credentials,
+			) = get_oauth_server().validate_authorization_request(r.url, r.method, r.get_data(), r.headers)
 
 			skip_auth = frappe.db.get_value(
 				"OAuth Client",
@@ -101,6 +99,10 @@ def authorize(**kwargs):
 				frappe.local.response["type"] = "redirect"
 				frappe.local.response["location"] = success_url
 			else:
+				if "openid" in scopes:
+					scopes.remove("openid")
+					scopes.extend(["Full Name", "Email", "User Image", "Roles"])
+
 				# Show Allow/Deny screen.
 				response_html_params = frappe._dict(
 					{
@@ -113,7 +115,7 @@ def authorize(**kwargs):
 				resp_html = frappe.render_template(
 					"templates/includes/oauth_confirmation.html", response_html_params
 				)
-				frappe.respond_as_web_page("Confirm Access", resp_html)
+				frappe.respond_as_web_page(frappe._("Confirm Access"), resp_html, primary_action=None)
 		except (FatalClientError, OAuth2Error) as e:
 			return generate_json_error_response(e)
 

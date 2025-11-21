@@ -13,6 +13,7 @@ from ldap3.core.exceptions import (
 	LDAPInvalidFilterError,
 	LDAPNoSuchObjectResult,
 )
+from ldap3.utils.conv import escape_filter_chars
 from ldap3.utils.hashed import hashed
 
 import frappe
@@ -39,7 +40,6 @@ class LDAPSettings(Document):
 				and self.ldap_search_string
 				and "{0}" in self.ldap_search_string
 			):
-
 				conn = self.connect_to_ldap(
 					base_dn=self.base_dn, password=self.get_password(raise_exception=False)
 				)
@@ -53,7 +53,9 @@ class LDAPSettings(Document):
 						)
 
 						conn.search(
-							search_base=self.ldap_search_path_group, search_filter="(objectClass=*)", attributes=["cn"]
+							search_base=self.ldap_search_path_group,
+							search_filter="(objectClass=*)",
+							attributes=["cn"],
 						)
 
 				except LDAPAttributeError as ex:
@@ -143,7 +145,7 @@ class LDAPSettings(Document):
 			setattr(user, key, value)
 		user.save(ignore_permissions=True)
 
-	def sync_roles(self, user: "User", additional_groups: list = None):
+	def sync_roles(self, user: "User", additional_groups: list | None = None):
 		current_roles = {d.role for d in user.get("roles")}
 		if self.default_user_type == "System User":
 			needed_roles = {self.default_role}
@@ -152,9 +154,7 @@ class LDAPSettings(Document):
 		lower_groups = [g.lower() for g in additional_groups or []]
 
 		all_mapped_roles = {r.erpnext_role for r in self.ldap_groups}
-		matched_roles = {
-			r.erpnext_role for r in self.ldap_groups if r.ldap_group.lower() in lower_groups
-		}
+		matched_roles = {r.erpnext_role for r in self.ldap_groups if r.ldap_group.lower() in lower_groups}
 		unmatched_roles = all_mapped_roles.difference(matched_roles)
 		needed_roles.update(matched_roles)
 		roles_to_remove = current_roles.intersection(unmatched_roles)
@@ -165,7 +165,7 @@ class LDAPSettings(Document):
 
 		user.remove_roles(*roles_to_remove)
 
-	def create_or_update_user(self, user_data: dict, groups: list = None):
+	def create_or_update_user(self, user_data: dict, groups: list | None = None):
 		user: "User" = None
 		role: str = None
 
@@ -234,18 +234,19 @@ class LDAPSettings(Document):
 		if self.ldap_directory_server.lower() == "active directory":
 			ldap_object_class = "Group"
 			ldap_group_members_attribute = "member"
-			user_search_str = user.entry_dn
+			user_search_str = escape_filter_chars(user.entry_dn)
 
 		elif self.ldap_directory_server.lower() == "openldap":
 			ldap_object_class = "posixgroup"
 			ldap_group_members_attribute = "memberuid"
-			user_search_str = getattr(user, self.ldap_username_field).value
+			user_search_str = escape_filter_chars(getattr(user, self.ldap_username_field).value)
 
 		elif self.ldap_directory_server.lower() == "custom":
 			ldap_object_class = self.ldap_group_objectclass
 			ldap_group_members_attribute = self.ldap_group_member_attribute
 			ldap_custom_group_search = self.ldap_custom_group_search or "{0}"
-			user_search_str = ldap_custom_group_search.format(getattr(user, self.ldap_username_field).value)
+			user_value = escape_filter_chars(getattr(user, self.ldap_username_field).value)
+			user_search_str = ldap_custom_group_search.format(user_value)
 
 		else:
 			# NOTE: depreciate this else path
@@ -272,6 +273,7 @@ class LDAPSettings(Document):
 		if not self.enabled:
 			frappe.throw(_("LDAP is not enabled."))
 
+		username = escape_filter_chars(username)
 		user_filter = self.ldap_search_string.format(username)
 		ldap_attributes = self.get_ldap_attributes()
 		conn = self.connect_to_ldap(self.base_dn, self.get_password(raise_exception=False))
@@ -299,12 +301,11 @@ class LDAPSettings(Document):
 		except LDAPInvalidCredentialsResult:
 			frappe.throw(_("Invalid username or password"))
 
-	def reset_password(self, user, password, logout_sessions=False):
+	def reset_password(self, user: str, password: str, logout_sessions: int = 0):
+		user = escape_filter_chars(user)
 		search_filter = f"({self.ldap_email_field}={user})"
 
-		conn = self.connect_to_ldap(
-			self.base_dn, self.get_password(raise_exception=False), read_only=False
-		)
+		conn = self.connect_to_ldap(self.base_dn, self.get_password(raise_exception=False), read_only=False)
 
 		if conn.search(
 			search_base=self.ldap_search_path_user,
@@ -381,12 +382,19 @@ def login():
 	frappe.form_dict.pop("pwd", None)
 	frappe.local.login_manager.post_login()
 
+	try:
+		from frappe.core.doctype.activity_log.activity_log import add_authentication_log
+
+		add_authentication_log(_("{0} logged in").format(user.full_name), user.name)
+	except ImportError:
+		pass
+
 	# because of a GET request!
 	frappe.db.commit()
 
 
 @frappe.whitelist()
-def reset_password(user, password, logout):
+def reset_password(user: str, password: str, logout: int):
 	ldap: LDAPSettings = frappe.get_doc("LDAP Settings")
 	if not ldap.enabled:
 		frappe.throw(_("LDAP is not enabled."))

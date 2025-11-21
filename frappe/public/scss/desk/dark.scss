@@ -21,7 +21,7 @@
 	--icon-stroke: var(--gray-300);
 
 	// Error colors
-	--error-bg: var(--red-70);
+	--error-bg: var(--red-800);
 	--error-border: var(--red-400);
 
 	// Layout Colors
@@ -98,6 +98,8 @@
 	--table-border-color: var(--gray-600);
 	--highlight-color: var(--gray-700);
 	--yellow-highlight-color: var(--yellow-700);
+
+	--btn-group-border-color: var(--gray-800);
 
 	--highlight-shadow: 1px 1px 10px var(--blue-900), 0px 0px 4px var(--blue-500);
 
@@ -197,7 +199,8 @@
 		background: var(--gray-500);
 	}
 
-	$indicator-colors: green, cyan, blue, orange, yellow, gray, grey, red, pink, darkgrey, purple, light-blue;
+	$indicator-colors: green, cyan, blue, orange, yellow, gray, grey, red, pink, darkgrey, purple,
+		light-blue;
 	@each $color in $indicator-colors {
 		.indicator {
 			--indicator-dot-#{"" + $color}: var(--bg-#{$color});

@@ -47,13 +47,22 @@ class SocialLoginKey(Document):
 		if not self.redirect_url:
 			frappe.throw(_("Please enter Redirect URL"), exc=RedirectUrlNotSetError)
 		if self.enable_social_login and not self.client_id:
-			frappe.throw(
-				_("Please enter Client ID before social login is enabled"), exc=ClientIDNotSetError
-			)
+			frappe.throw(_("Please enter Client ID before social login is enabled"), exc=ClientIDNotSetError)
 		if self.enable_social_login and not self.client_secret:
 			frappe.throw(
 				_("Please enter Client Secret before social login is enabled"), exc=ClientSecretNotSetError
 			)
+		if self.auth_url_data:
+			try:
+				json.loads(self.auth_url_data)
+			except json.JSONDecodeError:
+				frappe.throw(_("Auth URL data should be valid JSON"))
+
+		if self.api_endpoint_args:
+			try:
+				json.loads(self.api_endpoint_args)
+			except json.JSONDecodeError:
+				frappe.throw(_("API Endpoint Args should be valid JSON"))
 
 	def set_icon(self):
 		icon_map = {
@@ -96,7 +105,7 @@ class SocialLoginKey(Document):
 			"icon": "fa fa-github",
 			"authorize_url": "https://github.com/login/oauth/authorize",
 			"access_token_url": "https://github.com/login/oauth/access_token",
-			"redirect_url": "/api/method/frappe.www.login.login_via_github",
+			"redirect_url": "/api/method/frappe.integrations.oauth2_logins.login_via_github",
 			"api_endpoint": "user",
 			"api_endpoint_args": None,
 			"auth_url_data": json.dumps({"scope": "user:email"}),
@@ -110,7 +119,7 @@ class SocialLoginKey(Document):
 			"icon": "fa fa-google",
 			"authorize_url": "https://accounts.google.com/o/oauth2/auth",
 			"access_token_url": "https://accounts.google.com/o/oauth2/token",
-			"redirect_url": "/api/method/frappe.www.login.login_via_google",
+			"redirect_url": "/api/method/frappe.integrations.oauth2_logins.login_via_google",
 			"api_endpoint": "oauth2/v2/userinfo",
 			"api_endpoint_args": None,
 			"auth_url_data": json.dumps(
@@ -129,7 +138,7 @@ class SocialLoginKey(Document):
 			"icon": "fa fa-facebook",
 			"authorize_url": "https://www.facebook.com/dialog/oauth",
 			"access_token_url": "https://graph.facebook.com/oauth/access_token",
-			"redirect_url": "/api/method/frappe.www.login.login_via_facebook",
+			"redirect_url": "/api/method/frappe.integrations.oauth2_logins.login_via_facebook",
 			"api_endpoint": "/v2.5/me",
 			"api_endpoint_args": json.dumps(
 				{"fields": "first_name,last_name,email,gender,location,verified,picture"}
@@ -144,7 +153,7 @@ class SocialLoginKey(Document):
 			"enable_social_login": 1,
 			"custom_base_url": 1,
 			"icon": "/assets/frappe/images/frappe-favicon.svg",
-			"redirect_url": "/api/method/frappe.www.login.login_via_frappe",
+			"redirect_url": "/api/method/frappe.integrations.oauth2_logins.login_via_frappe",
 			"api_endpoint": "/api/method/frappe.integrations.oauth2.openid_profile",
 			"api_endpoint_args": None,
 			"authorize_url": "/api/method/frappe.integrations.oauth2.authorize",

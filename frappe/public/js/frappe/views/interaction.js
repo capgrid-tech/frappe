@@ -263,7 +263,8 @@ frappe.views.InteractionComposer = class InteractionComposer {
 						message: __("{0} created successfully", [form_values.interaction_type]),
 						indicator: "green",
 					});
-					if ("assigned_to" in form_values) {
+
+					if (form_values.interaction_type === "Event" && "assigned_to" in form_values) {
 						me.assign_document(r.message, form_values["assigned_to"]);
 					}
 
@@ -356,7 +357,7 @@ function get_doc_mappings() {
 				due_date: "date",
 				reference_doctype: "reference_type",
 				reference_document: "reference_name",
-				assigned_to: "owner",
+				assigned_to: "allocated_to",
 			},
 			reqd_fields: ["description"],
 			hidden_fields: ["public", "category"],

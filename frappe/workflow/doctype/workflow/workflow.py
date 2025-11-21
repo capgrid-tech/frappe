@@ -15,9 +15,7 @@ class Workflow(Document):
 		self.validate_docstatus()
 
 	def on_update(self):
-		self.update_doc_status()
 		frappe.clear_cache(doctype=self.document_type)
-		frappe.cache().delete_key("workflow_" + self.name)  # clear cache created in model/workflow.py
 
 	def create_custom_field_for_workflow_state(self):
 		frappe.clear_cache(doctype=self.document_type)
@@ -48,44 +46,18 @@ class Workflow(Document):
 		docstatus_map = {}
 		states = self.get("states")
 		for d in states:
-			if not d.doc_status in docstatus_map:
+			if d.doc_status not in docstatus_map:
 				frappe.db.sql(
-					"""
-					UPDATE `tab{doctype}`
-					SET `{field}` = %s
-					WHERE ifnull(`{field}`, '') = ''
+					f"""
+					UPDATE `tab{self.document_type}`
+					SET `{self.workflow_state_field}` = %s
+					WHERE ifnull(`{self.workflow_state_field}`, '') = ''
 					AND `docstatus` = %s
-				""".format(
-						doctype=self.document_type, field=self.workflow_state_field
-					),
+				""",
 					(d.state, d.doc_status),
 				)
 
 				docstatus_map[d.doc_status] = d.state
-
-	def update_doc_status(self):
-		"""
-		Checks if the docstatus of a state was updated.
-		If yes then the docstatus of the document with same state will be updated
-		"""
-		doc_before_save = self.get_doc_before_save()
-		before_save_states, new_states = {}, {}
-		if doc_before_save:
-			for d in doc_before_save.states:
-				before_save_states[d.state] = d
-			for d in self.states:
-				new_states[d.state] = d
-
-			for key in new_states:
-				if key in before_save_states:
-					if not new_states[key].doc_status == before_save_states[key].doc_status:
-						frappe.db.set_value(
-							self.document_type,
-							{self.workflow_state_field: before_save_states[key].state},
-							"docstatus",
-							new_states[key].doc_status,
-							update_modified=False,
-						)
 
 	def validate_docstatus(self):
 		def get_state(state):
@@ -106,9 +78,9 @@ class Workflow(Document):
 
 			if state.doc_status == "1" and next_state.doc_status == "0":
 				frappe.throw(
-					frappe._("Submitted Document cannot be converted back to draft. Transition row {0}").format(
-						t.idx
-					)
+					frappe._(
+						"Submitted Document cannot be converted back to draft. Transition row {0}"
+					).format(t.idx)
 				)
 
 			if state.doc_status == "0" and next_state.doc_status == "2":
@@ -126,18 +98,20 @@ class Workflow(Document):
 
 @frappe.whitelist()
 def get_fieldnames_for(doctype):
-	return [
-		f.fieldname for f in frappe.get_meta(doctype).fields if f.fieldname not in no_value_fields
-	]
+	frappe.has_permission(doctype=doctype, ptype="read", throw=True)
+	return [f.fieldname for f in frappe.get_meta(doctype).fields if f.fieldname not in no_value_fields]
 
 
 @frappe.whitelist()
 def get_workflow_state_count(doctype, workflow_state_field, states):
+	frappe.has_permission(doctype=doctype, ptype="read", throw=True)
 	states = frappe.parse_json(states)
-	result = frappe.get_all(
-		doctype,
-		fields=[workflow_state_field, "count(*) as count"],
-		filters={workflow_state_field: ["not in", states]},
-		group_by=workflow_state_field,
-	)
-	return [r for r in result if r[workflow_state_field]]
+
+	if workflow_state_field in frappe.get_meta(doctype).get_valid_columns():
+		result = frappe.get_all(
+			doctype,
+			fields=[workflow_state_field, "count(*) as count"],
+			filters={workflow_state_field: ["not in", states]},
+			group_by=workflow_state_field,
+		)
+		return [r for r in result if r[workflow_state_field]]

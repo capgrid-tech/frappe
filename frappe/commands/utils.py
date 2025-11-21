@@ -2,11 +2,13 @@ import json
 import os
 import subprocess
 import sys
+import typing
 from shutil import which
 
 import click
 
 import frappe
+import frappe.commands
 from frappe.commands import get_site, pass_context
 from frappe.coverage import CodeCoverage
 from frappe.exceptions import SiteNotSpecifiedError
@@ -16,6 +18,9 @@ DATA_IMPORT_DEPRECATION = (
 	"[DEPRECATED] The `import-csv` command used 'Data Import Legacy' which has been deprecated.\n"
 	"Use `data-import` command instead to import data via 'Data Import'."
 )
+
+if typing.TYPE_CHECKING:
+	from IPython.terminal.embed import InteractiveShellEmbed
 
 
 @click.command("build")
@@ -261,9 +266,8 @@ def execute(context, method, args=None, kwargs=None, profile=False):
 			try:
 				ret = frappe.get_attr(method)(*args, **kwargs)
 			except Exception:
-				ret = frappe.safe_eval(
-					method + "(*args, **kwargs)", eval_globals=globals(), eval_locals=locals()
-				)
+				# eval is safe here because input is from console
+				ret = eval(method + "(*args, **kwargs)", globals(), locals())  # nosemgrep
 
 			if profile:
 				import pstats
@@ -407,12 +411,8 @@ def import_doc(context, path, force=False):
 
 @click.command("import-csv", help=DATA_IMPORT_DEPRECATION)
 @click.argument("path")
-@click.option(
-	"--only-insert", default=False, is_flag=True, help="Do not overwrite existing records"
-)
-@click.option(
-	"--submit-after-import", default=False, is_flag=True, help="Submit document after importing it"
-)
+@click.option("--only-insert", default=False, is_flag=True, help="Do not overwrite existing records")
+@click.option("--submit-after-import", default=False, is_flag=True, help="Submit document after importing it")
 @click.option(
 	"--ignore-encoding-errors",
 	default=False,
@@ -445,14 +445,10 @@ def import_csv(
 	default="Insert",
 	help="Insert New Records or Update Existing Records",
 )
-@click.option(
-	"--submit-after-import", default=False, is_flag=True, help="Submit document after importing it"
-)
+@click.option("--submit-after-import", default=False, is_flag=True, help="Submit document after importing it")
 @click.option("--mute-emails", default=True, is_flag=True, help="Mute emails during import")
 @pass_context
-def data_import(
-	context, file_path, doctype, import_type=None, submit_after_import=False, mute_emails=True
-):
+def data_import(context, file_path, doctype, import_type=None, submit_after_import=False, mute_emails=True):
 	"Import documents in bulk from CSV or XLSX using data import"
 	from frappe.core.doctype.data_import.data_import import import_file
 
@@ -508,10 +504,13 @@ def mariadb(context):
 	"""
 	Enter into mariadb console for a given site.
 	"""
+	from frappe.utils import get_site_path
+
 	site = get_site(context)
 	if not site:
 		raise SiteNotSpecifiedError
 	frappe.init(site=site)
+	os.environ["MYSQL_HISTFILE"] = os.path.abspath(get_site_path("logs", "mariadb_console.log"))
 	_mariadb()
 
 
@@ -582,7 +581,7 @@ def jupyter(context):
 		os.mkdir(jupyter_notebooks_path)
 	bin_path = os.path.abspath("../env/bin")
 	print(
-		"""
+		f"""
 Starting Jupyter notebook
 Run the following in your first cell to connect notebook to frappe
 ```
@@ -592,9 +591,7 @@ frappe.connect()
 frappe.local.lang = frappe.db.get_default('lang')
 frappe.db.connect()
 ```
-	""".format(
-			site=site, sites_path=sites_path
-		)
+	"""
 	)
 	os.execv(
 		f"{bin_path}/jupyter",
@@ -610,6 +607,18 @@ def _console_cleanup():
 	# Execute rollback_observers on console close
 	frappe.db.rollback()
 	frappe.destroy()
+
+
+def store_logs(terminal: "InteractiveShellEmbed") -> None:
+	from contextlib import suppress
+
+	frappe.log_level = 20  # info
+	with suppress(Exception):
+		logger = frappe.logger("ipython")
+		logger.info("=== bench console session ===")
+		for line in terminal.history_manager.get_range():
+			logger.info(line[2])
+		logger.info("=== session end ===")
 
 
 @click.command("console")
@@ -635,8 +644,9 @@ def console(context, autoreload=False):
 
 	all_apps = frappe.get_installed_apps()
 	failed_to_import = []
+	register(store_logs, terminal)  # Note: atexit runs in reverse order of registration
 
-	for app in all_apps:
+	for app in list(all_apps):
 		try:
 			locals()[app] = __import__(app)
 		except ModuleNotFoundError:
@@ -652,9 +662,7 @@ def console(context, autoreload=False):
 	terminal()
 
 
-@click.command(
-	"transform-database", help="Change tables' internal settings changing engine and row formats"
-)
+@click.command("transform-database", help="Change tables' internal settings changing engine and row formats")
 @click.option(
 	"--table",
 	required=True,
@@ -754,9 +762,7 @@ def transform_database(context, table, engine, row_format, failfast):
 @click.option("--profile", is_flag=True, default=False)
 @click.option("--coverage", is_flag=True, default=False)
 @click.option("--skip-test-records", is_flag=True, default=False, help="Don't create test records")
-@click.option(
-	"--skip-before-tests", is_flag=True, default=False, help="Don't run before tests hook"
-)
+@click.option("--skip-before-tests", is_flag=True, default=False, help="Don't run before tests hook")
 @click.option("--junit-xml-output", help="Destination file path for junit xml report")
 @click.option(
 	"--failfast", is_flag=True, default=False, help="Stop the test run on the first error or failure"
@@ -779,7 +785,6 @@ def run_tests(
 	failfast=False,
 	case=None,
 ):
-
 	with CodeCoverage(coverage, app):
 		import frappe
 		import frappe.test_runner
@@ -912,15 +917,15 @@ def run_ui_tests(
 		click.secho("Installing Cypress...", fg="yellow")
 		packages = " ".join(
 			[
-				"cypress@^10",
-				"@4tw/cypress-drag-drop@^2",
-				"cypress-real-events",
-				"@testing-library/cypress@^8",
+				"cypress@13.10.0",
+				"@4tw/cypress-drag-drop@2.2.5",
+				"cypress-real-events@1.12.0",
+				"@testing-library/cypress@10.0.1",
 				"@testing-library/dom@8.17.1",
-				"@cypress/code-coverage@^3",
+				"@cypress/code-coverage@3.12.39",
 			]
 		)
-		frappe.commands.popen(f"yarn add {packages} --no-lockfile")
+		frappe.commands.popen(f"yarn add {packages} --no-lockfile", raise_err=True)
 
 	# run for headless mode
 	run_or_open = "run --browser chrome" if headless else "open"
@@ -936,7 +941,11 @@ def run_ui_tests(
 		formatted_command += " " + " ".join(cypressargs)
 
 	click.secho("Running Cypress...", fg="yellow")
-	frappe.commands.popen(formatted_command, cwd=app_base_path, raise_err=True)
+	try:
+		frappe.commands.popen(formatted_command, cwd=app_base_path, raise_err=True)
+	except subprocess.CalledProcessError as e:
+		click.secho("Cypress tests failed", fg="red")
+		raise click.exceptions.Exit(1) from e
 
 
 @click.command("serve")
@@ -993,7 +1002,9 @@ def request(context, args=None, path=None):
 			frappe.connect()
 			if args:
 				if "?" in args:
-					frappe.local.form_dict = frappe._dict([a.split("=") for a in args.split("?")[-1].split("&")])
+					frappe.local.form_dict = frappe._dict(
+						[a.split("=") for a in args.split("?")[-1].split("&")]
+					)
 				else:
 					frappe.local.form_dict = frappe._dict()
 
@@ -1017,11 +1028,17 @@ def request(context, args=None, path=None):
 @click.command("make-app")
 @click.argument("destination")
 @click.argument("app_name")
-@click.option(
-	"--no-git", is_flag=True, default=False, help="Do not initialize git repository for the app"
-)
+@click.option("--no-git", is_flag=True, default=False, help="Do not initialize git repository for the app")
 def make_app(destination, app_name, no_git=False):
 	"Creates a boilerplate app"
+	from frappe.utils import get_sites
+
+	if app_name in get_sites():
+		click.secho(
+			f"Your bench has a site called {app_name}, please choose another name for the app.", fg="red"
+		)
+		sys.exit(1)
+
 	from frappe.utils.boilerplate import make_boilerplate
 
 	make_boilerplate(destination, app_name, no_git=no_git)
@@ -1040,9 +1057,7 @@ def create_patch():
 @click.command("set-config")
 @click.argument("key")
 @click.argument("value")
-@click.option(
-	"-g", "--global", "global_", is_flag=True, default=False, help="Set value in bench config"
-)
+@click.option("-g", "--global", "global_", is_flag=True, default=False, help="Set value in bench config")
 @click.option("-p", "--parse", is_flag=True, default=False, help="Evaluate as Python Object")
 @click.option("--as-dict", is_flag=True, default=False, help="Legacy: Evaluate as Python Object")
 @pass_context
@@ -1053,9 +1068,7 @@ def set_config(context, key, value, global_=False, parse=False, as_dict=False):
 	if as_dict:
 		from frappe.utils.commands import warn
 
-		warn(
-			"--as-dict will be deprecated in v14. Use --parse instead", category=PendingDeprecationWarning
-		)
+		warn("--as-dict will be deprecated in v14. Use --parse instead", category=PendingDeprecationWarning)
 		parse = as_dict
 
 	if parse:
@@ -1126,9 +1139,7 @@ def get_version(output):
 
 
 @click.command("rebuild-global-search")
-@click.option(
-	"--static-pages", is_flag=True, default=False, help="Rebuild global search for static pages"
-)
+@click.option("--static-pages", is_flag=True, default=False, help="Rebuild global search for static pages")
 @pass_context
 def rebuild_global_search(context, static_pages=False):
 	"""Setup help table in the current site (called after migrate)"""

@@ -13,8 +13,9 @@
   "conditions",
   "naming_section",
   "prefix",
-  "prefix_digits",
-  "counter"
+  "counter",
+  "column_break_xfqa",
+  "prefix_digits"
  ],
  "fields": [
   {
@@ -23,7 +24,8 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Document Type",
-   "options": "DocType"
+   "options": "DocType",
+   "reqd": 1
   },
   {
    "default": "0",
@@ -39,11 +41,12 @@
    "reqd": 1
   },
   {
+   "default": "0",
+   "description": "Warning: Updating counter may lead to document name conflicts if not done properly",
    "fieldname": "counter",
    "fieldtype": "Int",
    "label": "Counter",
-   "no_copy": 1,
-   "read_only": 1
+   "no_copy": 1
   },
   {
    "default": "5",
@@ -77,6 +80,10 @@
    "fieldname": "priority",
    "fieldtype": "Int",
    "label": "Priority"
+  },
+  {
+   "fieldname": "column_break_xfqa",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,

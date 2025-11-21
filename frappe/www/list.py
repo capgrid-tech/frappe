@@ -26,9 +26,18 @@ def get_context(context, **dict_params):
 
 
 @frappe.whitelist(allow_guest=True)
-def get(doctype, txt=None, limit_start=0, limit=20, pathname=None, **kwargs):
-	"""Returns processed HTML page for a standard listing."""
+def get(
+	doctype: str,
+	txt: str | None = None,
+	limit_start: int = 0,
+	limit: int = 20,
+	pathname: str | None = None,
+	**kwargs,
+):
+	"""Return processed HTML page for a standard listing."""
 	limit_start = cint(limit_start)
+	limit = cint(limit)
+
 	raw_result = get_list_data(doctype, txt, limit_start, limit=limit + 1, **kwargs)
 	show_more = len(raw_result) > limit
 	if show_more:
@@ -75,10 +84,18 @@ def get(doctype, txt=None, limit_start=0, limit=20, pathname=None, **kwargs):
 
 @frappe.whitelist(allow_guest=True)
 def get_list_data(
-	doctype, txt=None, limit_start=0, fields=None, cmd=None, limit=20, web_form_name=None, **kwargs
+	doctype: str,
+	txt: str | None = None,
+	limit_start: int = 0,
+	fields: list | None = None,
+	cmd: str | None = None,
+	limit: int = 20,
+	web_form_name: str | None = None,
+	**kwargs,
 ):
 	"""Returns processed HTML page for a standard listing."""
 	limit_start = cint(limit_start)
+	limit = cint(limit)
 
 	if frappe.is_table(doctype):
 		frappe.throw(_("Child DocTypes are not allowed"), title=_("Invalid DocType"))
@@ -129,9 +146,7 @@ def set_route(context):
 	elif context.doc and getattr(context.doc, "route", None):
 		context.route = context.doc.route
 	else:
-		context.route = "{}/{}".format(
-			context.pathname or quoted(context.doc.doctype), quoted(context.doc.name)
-		)
+		context.route = f"{context.pathname or quoted(context.doc.doctype)}/{quoted(context.doc.name)}"
 
 
 def prepare_filters(doctype, controller, kwargs):
@@ -145,6 +160,8 @@ def prepare_filters(doctype, controller, kwargs):
 
 	if hasattr(controller, "website") and controller.website.get("condition_field"):
 		filters[controller.website["condition_field"]] = 1
+	elif meta.is_published_field:
+		filters[meta.is_published_field] = 1
 
 	if filters.pathname:
 		# resolve additional filters from path
@@ -154,8 +171,11 @@ def prepare_filters(doctype, controller, kwargs):
 				filters[key] = val
 
 	# filter the filters to include valid fields only
-	for fieldname, val in list(filters.items()):
-		if not meta.has_field(fieldname):
+	from frappe.model.meta import DEFAULT_FIELD_LABELS
+
+	for fieldname in list(filters.keys()):
+		# add a check for default fields, as they are not present in meta.fields
+		if not meta.has_field(fieldname) and fieldname not in DEFAULT_FIELD_LABELS.keys():
 			del filters[fieldname]
 
 	return filters
@@ -186,7 +206,7 @@ def get_list_context(context, doctype, web_form_name=None):
 	# get context for custom webform
 	if meta.custom and web_form_name:
 		webform_list_contexts = frappe.get_hooks("webform_list_context")
-		if webform_list_contexts:
+		if webform_list_contexts and not frappe.get_doc("Module Def", meta.module).custom:
 			out = frappe._dict(frappe.get_attr(webform_list_contexts[0])(meta.module) or {})
 			if out:
 				list_context = out
@@ -228,7 +248,12 @@ def get_list(
 	if txt:
 		if meta.search_fields:
 			for f in meta.get_search_fields():
-				if f == "name" or meta.get_field(f).fieldtype in ("Data", "Text", "Small Text", "Text Editor"):
+				if f == "name" or meta.get_field(f).fieldtype in (
+					"Data",
+					"Text",
+					"Small Text",
+					"Text Editor",
+				):
 					or_filters.append([doctype, f, "like", "%" + txt + "%"])
 		else:
 			if isinstance(filters, dict):

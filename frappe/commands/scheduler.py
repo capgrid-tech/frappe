@@ -74,9 +74,7 @@ def disable_scheduler(context):
 @click.command("scheduler")
 @click.option("--site", help="site name")
 @click.argument("state", type=click.Choice(["pause", "resume", "disable", "enable", "status"]))
-@click.option(
-	"--format", "-f", default="text", type=click.Choice(["json", "text"]), help="Output format"
-)
+@click.option("--format", "-f", default="text", type=click.Choice(["json", "text"]), help="Output format")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @pass_context
 def scheduler(context, state: str, format: str, verbose: bool = False, site: str | None = None):
@@ -128,9 +126,7 @@ def set_maintenance_mode(context, state, site=None):
 		frappe.destroy()
 
 
-@click.command(
-	"doctor"
-)  # Passing context always gets a site and if there is no use site it breaks
+@click.command("doctor")  # Passing context always gets a site and if there is no use site it breaks
 @click.option("--site", help="site name")
 @pass_context
 def doctor(context, site=None):
@@ -198,9 +194,7 @@ def start_scheduler():
 	type=click.Choice(["round_robin", "random"]),
 	help="Dequeuing strategy to use",
 )
-def start_worker(
-	queue, quiet=False, rq_username=None, rq_password=None, burst=False, strategy=None
-):
+def start_worker(queue, quiet=False, rq_username=None, rq_password=None, burst=False, strategy=None):
 	from frappe.utils.background_jobs import start_worker
 
 	start_worker(
@@ -217,14 +211,23 @@ def start_worker(
 @click.option("--site", help="site name")
 @pass_context
 def ready_for_migration(context, site=None):
-	from frappe.utils.doctor import get_pending_jobs
+	import time
+
+	from frappe.utils.doctor import any_job_pending
 
 	if not site:
 		site = get_site(context)
 
 	try:
-		frappe.init(site=site)
-		pending_jobs = get_pending_jobs(site=site)
+		frappe.init(site)
+		pending_jobs = False
+
+		# HACK: Check at least 3 times, 1 second apart.
+		# Rare edge case: Scheduler hasn't seen 'maintenance_mode=1` yet
+		#                    and takes more than 3 second to schedule.
+		for _ in range(3):
+			pending_jobs |= any_job_pending(site=site)
+			time.sleep(1)
 
 		if pending_jobs:
 			print(f"NOT READY for migration: site {site} has pending background jobs")

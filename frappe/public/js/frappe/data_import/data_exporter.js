@@ -67,6 +67,7 @@ frappe.data_import.DataExporter = class DataExporter {
 					columns: 2,
 					on_change: () => this.update_primary_action(),
 					options: this.get_multicheck_options(this.doctype),
+					sort_options: false,
 				},
 				...frappe.meta.get_table_fields(this.doctype).map((df) => {
 					let doctype = df.options;
@@ -310,6 +311,9 @@ export function get_columns_for_picker(doctype) {
 			keep = false;
 		}
 		if (["lft", "rgt"].includes(df.fieldname)) {
+			keep = false;
+		}
+		if (df.is_virtual) {
 			keep = false;
 		}
 		return keep;

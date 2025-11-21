@@ -5,7 +5,6 @@ frappe.provide("frappe.model");
 
 $.extend(frappe.model, {
 	new_names: {},
-	new_name_count: {},
 
 	get_new_doc: function (doctype, parent_doc, parentfield, with_mandatory_children) {
 		frappe.provide("locals." + doctype);
@@ -59,11 +58,7 @@ $.extend(frappe.model, {
 		if (frappe.route_options && !doc.parent) {
 			$.each(frappe.route_options, function (fieldname, value) {
 				var df = frappe.meta.has_field(doctype, fieldname);
-				if (
-					df &&
-					in_list(["Link", "Data", "Select", "Dynamic Link"], df.fieldtype) &&
-					!df.no_copy
-				) {
+				if (df && !df.no_copy) {
 					doc[fieldname] = value;
 				}
 			});
@@ -78,10 +73,8 @@ $.extend(frappe.model, {
 	},
 
 	get_new_name: function (doctype) {
-		var cnt = frappe.model.new_name_count;
-		if (!cnt[doctype]) cnt[doctype] = 0;
-		cnt[doctype]++;
-		return frappe.router.slug(`new-${doctype}-${cnt[doctype]}`);
+		// random hash is added to idenity mislinked files when doc is not saved and file is uploaded.
+		return frappe.router.slug(`new-${doctype}-${frappe.utils.get_random(10)}`);
 	},
 
 	set_default_values: function (doc, parent_doc) {
@@ -161,7 +154,9 @@ $.extend(frappe.model, {
 
 				if (!user_default) {
 					user_default = frappe.defaults.get_user_default(df.fieldname);
-				} else if (
+				}
+
+				if (
 					!user_default &&
 					df.remember_last_selected_value &&
 					frappe.boot.user.last_selected_values
@@ -270,23 +265,23 @@ $.extend(frappe.model, {
 	},
 
 	copy_doc: function (doc, from_amend, parent_doc, parentfield) {
-		var no_copy_list = ["name", "amended_from", "amendment_date", "cancel_reason"];
-		var newdoc = frappe.model.get_new_doc(doc.doctype, parent_doc, parentfield);
+		let no_copy_list = ["name", "amended_from", "amendment_date", "cancel_reason"];
+		let newdoc = frappe.model.get_new_doc(doc.doctype, parent_doc, parentfield);
 
-		for (var key in doc) {
-			// dont copy name and blank fields
-			var df = frappe.meta.get_docfield(doc.doctype, key);
+		for (let key in doc) {
+			// don't copy name and blank fields
+			let df = frappe.meta.get_docfield(doc.doctype, key);
 
-			if (
-				df &&
-				key.substr(0, 2) != "__" &&
-				!in_list(no_copy_list, key) &&
-				!(df && !from_amend && cint(df.no_copy) == 1)
-			) {
-				var value = doc[key] || [];
+			const is_internal_field = key.substring(0, 2) === "__";
+			const is_blocked_field = no_copy_list.includes(key);
+			const is_no_copy = !from_amend && df && cint(df.no_copy) == 1;
+			const is_password = df && df.fieldtype === "Password";
+
+			if (df && !is_internal_field && !is_blocked_field && !is_no_copy && !is_password) {
+				let value = doc[key] || [];
 				if (frappe.model.table_fields.includes(df.fieldtype)) {
-					for (var i = 0, j = value.length; i < j; i++) {
-						var d = value[i];
+					for (let i = 0, j = value.length; i < j; i++) {
+						let d = value[i];
 						frappe.model.copy_doc(d, from_amend, newdoc, df.fieldname);
 					}
 				} else {
@@ -295,7 +290,7 @@ $.extend(frappe.model, {
 			}
 		}
 
-		var user = frappe.session.user;
+		let user = frappe.session.user;
 
 		newdoc.__islocal = 1;
 		newdoc.docstatus = 0;
@@ -305,6 +300,10 @@ $.extend(frappe.model, {
 		newdoc.modified = "";
 		newdoc.lft = null;
 		newdoc.rgt = null;
+
+		if (from_amend && parent_doc) {
+			newdoc._amended_from = doc.name;
+		}
 
 		return newdoc;
 	},

@@ -86,9 +86,7 @@ def _create_app_boilerplate(dest, hooks, no_git=False):
 		os.path.join(dest, hooks.app_name, hooks.app_name, frappe.scrub(hooks.app_title)),
 		with_init=True,
 	)
-	frappe.create_folder(
-		os.path.join(dest, hooks.app_name, hooks.app_name, "templates"), with_init=True
-	)
+	frappe.create_folder(os.path.join(dest, hooks.app_name, hooks.app_name, "templates"), with_init=True)
 	frappe.create_folder(os.path.join(dest, hooks.app_name, hooks.app_name, "www"))
 	frappe.create_folder(
 		os.path.join(dest, hooks.app_name, hooks.app_name, "templates", "pages"), with_init=True
@@ -106,18 +104,13 @@ def _create_app_boilerplate(dest, hooks, no_git=False):
 	with open(os.path.join(dest, hooks.app_name, hooks.app_name, "__init__.py"), "w") as f:
 		f.write(frappe.as_unicode(init_template))
 
-	with open(os.path.join(dest, hooks.app_name, "MANIFEST.in"), "w") as f:
-		f.write(frappe.as_unicode(manifest_template.format(**hooks)))
-
-	with open(os.path.join(dest, hooks.app_name, "requirements.txt"), "w") as f:
-		f.write("# frappe -- https://github.com/frappe/frappe is installed via 'bench init'")
+	with open(os.path.join(dest, hooks.app_name, "pyproject.toml"), "w") as f:
+		f.write(frappe.as_unicode(pyproject_template.format(**hooks)))
 
 	with open(os.path.join(dest, hooks.app_name, "README.md"), "w") as f:
 		f.write(
 			frappe.as_unicode(
-				"## {}\n\n{}\n\n#### License\n\n{}".format(
-					hooks.app_title, hooks.app_description, hooks.app_license
-				)
+				f"## {hooks.app_title}\n\n{hooks.app_description}\n\n#### License\n\n{hooks.app_license}"
 			)
 		)
 
@@ -131,9 +124,6 @@ def _create_app_boilerplate(dest, hooks, no_git=False):
 	# So escaping them before setting variables in setup.py and hooks.py
 	for key in ("app_publisher", "app_description", "app_license"):
 		hooks[key] = hooks[key].replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
-
-	with open(os.path.join(dest, hooks.app_name, "setup.py"), "w") as f:
-		f.write(frappe.as_unicode(setup_template.format(**hooks)))
 
 	with open(os.path.join(dest, hooks.app_name, hooks.app_name, "hooks.py"), "w") as f:
 		f.write(frappe.as_unicode(hooks_template.format(**hooks)))
@@ -250,7 +240,7 @@ class PatchCreator:
 			raise Exception(f"Patch {self.patch_file} already exists")
 
 		*path, _filename = self.patch_file.relative_to(self.app_dir.parents[0]).parts
-		dotted_path = ".".join(path + [self.patch_file.stem])
+		dotted_path = ".".join([*path, self.patch_file.stem])
 
 		patches_txt = self.app_dir / "patches.txt"
 		existing_patches = patches_txt.read_text()
@@ -279,33 +269,32 @@ class PatchCreator:
 		init_py.touch()
 
 
-manifest_template = """include MANIFEST.in
-include requirements.txt
-include *.json
-include *.md
-include *.py
-include *.txt
-recursive-include {app_name} *.css
-recursive-include {app_name} *.csv
-recursive-include {app_name} *.html
-recursive-include {app_name} *.ico
-recursive-include {app_name} *.js
-recursive-include {app_name} *.json
-recursive-include {app_name} *.md
-recursive-include {app_name} *.png
-recursive-include {app_name} *.py
-recursive-include {app_name} *.svg
-recursive-include {app_name} *.txt
-recursive-exclude {app_name} *.pyc"""
-
-init_template = """
-__version__ = '0.0.1'
-
+init_template = """__version__ = "0.0.1"
 """
 
-hooks_template = """from . import __version__ as app_version
+pyproject_template = """[project]
+name = "{app_name}"
+authors = [
+    {{ name = "{app_publisher}", email = "{app_email}"}}
+]
+description = "{app_description}"
+requires-python = ">=3.10"
+readme = "README.md"
+dynamic = ["version"]
+dependencies = [
+    # "frappe~=15.0.0" # Installed and managed by bench.
+]
 
-app_name = "{app_name}"
+[build-system]
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
+
+# These dependencies are only installed when developer mode is enabled
+[tool.bench.dev-dependencies]
+# package_name = "~=1.1.0"
+"""
+
+hooks_template = """app_name = "{app_name}"
 app_title = "{app_title}"
 app_publisher = "{app_publisher}"
 app_description = "{app_description}"
@@ -347,7 +336,7 @@ app_license = "{app_license}"
 
 # website user home page (by Role)
 # role_home_page = {{
-#	"Role": "home_page"
+# 	"Role": "home_page"
 # }}
 
 # Generators
@@ -361,8 +350,8 @@ app_license = "{app_license}"
 
 # add methods and filters to jinja environment
 # jinja = {{
-#	"methods": "{app_name}.utils.jinja_methods",
-#	"filters": "{app_name}.utils.jinja_filters"
+# 	"methods": "{app_name}.utils.jinja_methods",
+# 	"filters": "{app_name}.utils.jinja_filters"
 # }}
 
 # Installation
@@ -377,6 +366,22 @@ app_license = "{app_license}"
 # before_uninstall = "{app_name}.uninstall.before_uninstall"
 # after_uninstall = "{app_name}.uninstall.after_uninstall"
 
+# Integration Setup
+# ------------------
+# To set up dependencies/integrations with other apps
+# Name of the app being installed is passed as an argument
+
+# before_app_install = "{app_name}.utils.before_app_install"
+# after_app_install = "{app_name}.utils.after_app_install"
+
+# Integration Cleanup
+# -------------------
+# To clean up dependencies/integrations with other apps
+# Name of the app being uninstalled is passed as an argument
+
+# before_app_uninstall = "{app_name}.utils.before_app_uninstall"
+# after_app_uninstall = "{app_name}.utils.after_app_uninstall"
+
 # Desk Notifications
 # ------------------
 # See frappe.core.notifications.get_notification_config
@@ -388,11 +393,11 @@ app_license = "{app_license}"
 # Permissions evaluated in scripted ways
 
 # permission_query_conditions = {{
-#	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
+# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
 # }}
 #
 # has_permission = {{
-#	"Event": "frappe.desk.doctype.event.event.has_permission",
+# 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }}
 
 # DocType Class
@@ -400,7 +405,7 @@ app_license = "{app_license}"
 # Override standard doctype classes
 
 # override_doctype_class = {{
-#	"ToDo": "custom_app.overrides.CustomToDo"
+# 	"ToDo": "custom_app.overrides.CustomToDo"
 # }}
 
 # Document Events
@@ -408,32 +413,32 @@ app_license = "{app_license}"
 # Hook on document methods and events
 
 # doc_events = {{
-#	"*": {{
-#		"on_update": "method",
-#		"on_cancel": "method",
-#		"on_trash": "method"
-#	}}
+# 	"*": {{
+# 		"on_update": "method",
+# 		"on_cancel": "method",
+# 		"on_trash": "method"
+# 	}}
 # }}
 
 # Scheduled Tasks
 # ---------------
 
 # scheduler_events = {{
-#	"all": [
-#		"{app_name}.tasks.all"
-#	],
-#	"daily": [
-#		"{app_name}.tasks.daily"
-#	],
-#	"hourly": [
-#		"{app_name}.tasks.hourly"
-#	],
-#	"weekly": [
-#		"{app_name}.tasks.weekly"
-#	],
-#	"monthly": [
-#		"{app_name}.tasks.monthly"
-#	],
+# 	"all": [
+# 		"{app_name}.tasks.all"
+# 	],
+# 	"daily": [
+# 		"{app_name}.tasks.daily"
+# 	],
+# 	"hourly": [
+# 		"{app_name}.tasks.hourly"
+# 	],
+# 	"weekly": [
+# 		"{app_name}.tasks.weekly"
+# 	],
+# 	"monthly": [
+# 		"{app_name}.tasks.monthly"
+# 	],
 # }}
 
 # Testing
@@ -445,14 +450,14 @@ app_license = "{app_license}"
 # ------------------------------
 #
 # override_whitelisted_methods = {{
-#	"frappe.desk.doctype.event.event.get_events": "{app_name}.event.get_events"
+# 	"frappe.desk.doctype.event.event.get_events": "{app_name}.event.get_events"
 # }}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
 # along with any modifications made in other Frappe apps
 # override_doctype_dashboards = {{
-#	"Task": "{app_name}.task.get_dashboard_data"
+# 	"Task": "{app_name}.task.get_dashboard_data"
 # }}
 
 # exempt linked doctypes from being automatically cancelled
@@ -478,31 +483,31 @@ app_license = "{app_license}"
 # --------------------
 
 # user_data_fields = [
-#	{{
-#		"doctype": "{{doctype_1}}",
-#		"filter_by": "{{filter_by}}",
-#		"redact_fields": ["{{field_1}}", "{{field_2}}"],
-#		"partial": 1,
-#	}},
-#	{{
-#		"doctype": "{{doctype_2}}",
-#		"filter_by": "{{filter_by}}",
-#		"partial": 1,
-#	}},
-#	{{
-#		"doctype": "{{doctype_3}}",
-#		"strict": False,
-#	}},
-#	{{
-#		"doctype": "{{doctype_4}}"
-#	}}
+# 	{{
+# 		"doctype": "{{doctype_1}}",
+# 		"filter_by": "{{filter_by}}",
+# 		"redact_fields": ["{{field_1}}", "{{field_2}}"],
+# 		"partial": 1,
+# 	}},
+# 	{{
+# 		"doctype": "{{doctype_2}}",
+# 		"filter_by": "{{filter_by}}",
+# 		"partial": 1,
+# 	}},
+# 	{{
+# 		"doctype": "{{doctype_3}}",
+# 		"strict": False,
+# 	}},
+# 	{{
+# 		"doctype": "{{doctype_4}}"
+# 	}}
 # ]
 
 # Authentication and authorization
 # --------------------------------
 
 # auth_hooks = [
-#	"{app_name}.auth.validate"
+# 	"{app_name}.auth.validate"
 # ]
 """
 
@@ -516,27 +521,6 @@ def get_data():
 			"label": _("{app_title}")
 		}}
 	]
-"""
-
-setup_template = """from setuptools import setup, find_packages
-
-with open("requirements.txt") as f:
-	install_requires = f.read().strip().split("\\n")
-
-# get version from __version__ variable in {app_name}/__init__.py
-from {app_name} import __version__ as version
-
-setup(
-	name="{app_name}",
-	version=version,
-	description="{app_description}",
-	author="{app_publisher}",
-	author_email="{app_email}",
-	packages=find_packages(),
-	zip_safe=False,
-	include_package_data=True,
-	install_requires=install_requires
-)
 """
 
 gitignore_template = """.DS_Store
@@ -593,6 +577,11 @@ jobs:
       - name: Clone
         uses: actions/checkout@v2
 
+      - name: Find tests
+        run: |
+          echo "Finding tests"
+          grep -rn "def test" > /dev/null
+
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
@@ -605,7 +594,7 @@ jobs:
           check-latest: true
 
       - name: Cache pip
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{{{ runner.os }}}}-pip-${{{{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}}}
@@ -617,7 +606,7 @@ jobs:
         id: yarn-cache-dir-path
         run: 'echo "::set-output name=dir::$(yarn cache dir)"'
 
-      - uses: actions/cache@v2
+      - uses: actions/cache@v4
         id: yarn-cache
         with:
           path: ${{{{ steps.yarn-cache-dir-path.outputs.dir }}}}

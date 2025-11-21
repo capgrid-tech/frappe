@@ -30,19 +30,21 @@ frappe.ui.form.on("Dashboard Chart", {
 			frm.disable_form();
 		}
 
-		frm.add_custom_button("Add Chart to Dashboard", () => {
-			const dialog = frappe.dashboard_utils.get_add_to_dashboard_dialog(
-				frm.doc.name,
-				"Dashboard Chart",
-				"frappe.desk.doctype.dashboard_chart.dashboard_chart.add_chart_to_dashboard"
-			);
+		if (!frm.is_new()) {
+			frm.add_custom_button("Add Chart to Dashboard", () => {
+				const dialog = frappe.dashboard_utils.get_add_to_dashboard_dialog(
+					frm.doc.name,
+					"Dashboard Chart",
+					"frappe.desk.doctype.dashboard_chart.dashboard_chart.add_chart_to_dashboard"
+				);
 
-			if (!frm.doc.chart_name) {
-				frappe.msgprint(__("Please create chart first"));
-			} else {
-				dialog.show();
-			}
-		});
+				if (!frm.doc.chart_name) {
+					frappe.msgprint(__("Please create chart first"));
+				} else {
+					dialog.show();
+				}
+			});
+		}
 
 		frm.set_df_property("filters_section", "hidden", 1);
 		frm.set_df_property("dynamic_filters_section", "hidden", 1);
@@ -107,6 +109,8 @@ frappe.ui.form.on("Dashboard Chart", {
 		// set timeseries based on chart type
 		if (["Count", "Average", "Sum"].includes(frm.doc.chart_type)) {
 			frm.set_value("timeseries", 1);
+		} else if (frm.doc.chart_type == "Custom") {
+			return;
 		} else {
 			frm.set_value("timeseries", 0);
 		}
@@ -525,29 +529,32 @@ frappe.ui.form.on("Dashboard Chart", {
 
 	set_parent_document_type: async function (frm) {
 		let document_type = frm.doc.document_type;
-		let doc_is_table =
-			document_type &&
-			(await frappe.db.get_value("DocType", document_type, "istable")).message.istable;
-
-		frm.set_df_property("parent_document_type", "hidden", !doc_is_table);
-
-		if (document_type && doc_is_table) {
-			let parents = await frappe.xcall(
-				"frappe.desk.doctype.dashboard_chart.dashboard_chart.get_parent_doctypes",
-				{ child_type: document_type }
-			);
-
-			frm.set_query("parent_document_type", function () {
-				return {
-					filters: {
-						name: ["in", parents],
-					},
-				};
-			});
-
-			if (parents.length === 1) {
-				frm.set_value("parent_document_type", parents[0]);
-			}
+		if (!document_type) {
+			frm.set_df_property("parent_document_type", "hidden", 1);
+			return;
 		}
+		frappe.model.with_doctype(document_type, async () => {
+			let doc_is_table = frappe.get_meta(document_type).istable;
+			frm.set_df_property("parent_document_type", "hidden", !doc_is_table);
+
+			if (doc_is_table) {
+				let parents = await frappe.xcall(
+					"frappe.desk.doctype.dashboard_chart.dashboard_chart.get_parent_doctypes",
+					{ child_type: document_type }
+				);
+
+				frm.set_query("parent_document_type", function () {
+					return {
+						filters: {
+							name: ["in", parents],
+						},
+					};
+				});
+
+				if (parents.length === 1) {
+					frm.set_value("parent_document_type", parents[0]);
+				}
+			}
+		});
 	},
 });

@@ -4,8 +4,11 @@
 import json
 
 import frappe
-from frappe.model import no_value_fields, table_fields
+from frappe.model import datetime_fields, no_value_fields, table_fields
 from frappe.model.document import Document
+from frappe.utils import cstr
+
+FIELDTYPES_TO_IGNORE = frozenset(fieldtype for fieldtype in no_value_fields if fieldtype not in table_fields)
 
 
 class Version(Document):
@@ -17,10 +20,19 @@ class Version(Document):
 		else:
 			return self.set_diff(old, new)
 
+	@staticmethod
+	def set_impersonator(data):
+		if not frappe.session:
+			return
+
+		if audit_user := frappe.session.data.get("audit_user"):
+			data["audit_user"] = audit_user
+
 	def set_diff(self, old: Document, new: Document) -> bool:
 		"""Set the data property with the diff of the docs if present"""
 		diff = get_diff(old, new)
 		if diff:
+			self.set_impersonator(diff)
 			self.ref_doctype = new.doctype
 			self.docname = new.name
 			self.data = frappe.as_json(diff, indent=None, separators=(",", ":"))
@@ -38,6 +50,7 @@ class Version(Document):
 			"updater_reference": updater_reference,
 			"created_by": doc.owner,
 		}
+		self.set_impersonator(data)
 		self.ref_doctype = doc.doctype
 		self.docname = doc.name
 		self.data = frappe.as_json(data, indent=None, separators=(",", ":"))
@@ -47,7 +60,7 @@ class Version(Document):
 		return json.loads(self.data)
 
 
-def get_diff(old, new, for_child=False):
+def get_diff(old, new, for_child=False, compare_cancelled=False):
 	"""Get diff between 2 document objects
 
 	If there is a change, then returns a dict like:
@@ -80,24 +93,41 @@ def get_diff(old, new, for_child=False):
 		updater_reference=updater_reference,
 	)
 
+	if not for_child:
+		amended_from = new.get("amended_from")
+		old_row_name_field = "_amended_from" if (amended_from and amended_from == old.name) else "name"
+
 	for df in new.meta.fields:
-		if df.fieldtype in no_value_fields and df.fieldtype not in table_fields:
+		if df.fieldtype in FIELDTYPES_TO_IGNORE or getattr(df, "is_virtual", False):
 			continue
 
 		old_value, new_value = old.get(df.fieldname), new.get(df.fieldname)
+		if df.fieldtype in ("Link", "Dynamic Link"):
+			old_value, new_value = cstr(old_value), cstr(new_value)
 
-		if df.fieldtype in table_fields:
-			# make maps
-			old_row_by_name, new_row_by_name = {}, {}
+		if df.fieldtype in datetime_fields:
+			if old_value is None and new_value == "":
+				new_value = None
+
+		if not for_child and df.fieldtype in table_fields:
+			old_rows_by_name = {}
 			for d in old_value:
-				old_row_by_name[d.name] = d
-			for d in new_value:
-				new_row_by_name[d.name] = d
+				old_rows_by_name[d.name] = d
+
+			found_rows = set()
 
 			# check rows for additions, changes
 			for i, d in enumerate(new_value):
-				if d.name in old_row_by_name:
-					diff = get_diff(old_row_by_name[d.name], d, for_child=True)
+				old_row_name = getattr(d, old_row_name_field, None)
+				if compare_cancelled:
+					if amended_from:
+						if len(old_value) > i:
+							old_row_name = old_value[i].name
+
+				if old_row_name and old_row_name in old_rows_by_name:
+					found_rows.add(old_row_name)
+
+					diff = get_diff(old_rows_by_name[old_row_name], d, for_child=True)
 					if diff and diff.changed:
 						out.row_changed.append((df.fieldname, i, d.name, diff.changed))
 				else:
@@ -105,7 +135,7 @@ def get_diff(old, new, for_child=False):
 
 			# check for deletions
 			for d in old_value:
-				if not d.name in new_row_by_name:
+				if d.name not in found_rows:
 					out.removed.append([df.fieldname, d.as_dict()])
 
 		elif old_value != new_value:
@@ -116,9 +146,14 @@ def get_diff(old, new, for_child=False):
 			if old_value != new_value:
 				out.changed.append((df.fieldname, old_value, new_value))
 
-	# docstatus
-	if not for_child and old.docstatus != new.docstatus:
-		out.changed.append(["docstatus", old.docstatus, new.docstatus])
+	# name & docstatus
+	if not for_child:
+		for key in ("name", "docstatus"):
+			old_value = getattr(old, key)
+			new_value = getattr(new, key)
+
+			if old_value != new_value:
+				out.changed.append([key, old_value, new_value])
 
 	if any((out.changed, out.added, out.removed, out.row_changed)):
 		return out

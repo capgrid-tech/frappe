@@ -38,10 +38,7 @@ class MariaDBTable(DBTable):
 			)
 
 		# creating sequence(s)
-		if (
-			not self.meta.issingle and self.meta.autoname == "autoincrement"
-		) or self.doctype in log_types:
-
+		if (not self.meta.issingle and self.meta.autoname == "autoincrement") or self.doctype in log_types:
 			frappe.db.create_sequence(self.doctype, check_not_exists=True, cache=frappe.db.SEQUENCE_CACHE)
 
 			# NOTE: not used nextval func as default as the ability to restore
@@ -65,7 +62,7 @@ class MariaDBTable(DBTable):
 			CHARACTER SET=utf8mb4
 			COLLATE=utf8mb4_unicode_ci"""
 
-		frappe.db.sql(query)
+		frappe.db.sql_ddl(query)
 
 	def alter(self):
 		for col in self.columns.values():
@@ -86,14 +83,17 @@ class MariaDBTable(DBTable):
 			)
 
 		for col in self.add_unique:
-			modify_column_query.append(
-				f"ADD UNIQUE INDEX IF NOT EXISTS {col.fieldname} (`{col.fieldname}`)"
-			)
+			modify_column_query.append(f"ADD UNIQUE INDEX IF NOT EXISTS {col.fieldname} (`{col.fieldname}`)")
 
 		for col in self.add_index:
 			# if index key does not exists
 			if not frappe.db.get_column_index(self.table_name, col.fieldname, unique=False):
 				add_index_query.append(f"ADD INDEX `{col.fieldname}_index`(`{col.fieldname}`)")
+
+		if self.meta.sort_field == "creation" and not frappe.db.get_column_index(
+			self.table_name, "creation", unique=False
+		):
+			add_index_query.append("ADD INDEX `creation`(`creation`)")
 
 		for col in {*self.drop_index, *self.drop_unique}:
 			if col.fieldname == "name":
@@ -115,7 +115,7 @@ class MariaDBTable(DBTable):
 				if query_parts:
 					query_body = ", ".join(query_parts)
 					query = f"ALTER TABLE `{self.table_name}` {query_body}"
-					frappe.db.sql(query)
+					frappe.db.sql_ddl(query)
 
 		except Exception as e:
 			if query := locals().get("query"):  # this weirdness is to avoid potentially unbounded vars
@@ -124,9 +124,9 @@ class MariaDBTable(DBTable):
 			if e.args[0] == DUP_ENTRY:
 				fieldname = str(e).split("'")[-2]
 				frappe.throw(
-					_("{0} field cannot be set as unique in {1}, as there are non-unique existing values").format(
-						fieldname, self.table_name
-					)
+					_(
+						"{0} field cannot be set as unique in {1}, as there are non-unique existing values"
+					).format(fieldname, self.table_name)
 				)
 
 			raise

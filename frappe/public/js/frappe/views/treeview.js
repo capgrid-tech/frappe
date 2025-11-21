@@ -211,7 +211,6 @@ frappe.views.TreeView = class TreeView {
 			method: "frappe.utils.nestedset.rebuild_tree",
 			args: {
 				doctype: me.doctype,
-				parent_field: "parent_" + me.doctype.toLowerCase().replace(/ /g, "_"),
 			},
 			callback: function (r) {
 				if (!r.exc) {
@@ -325,7 +324,8 @@ frappe.views.TreeView = class TreeView {
 		});
 
 		var args = $.extend({}, me.args);
-		args["parent_" + me.doctype.toLowerCase().replace(/ /g, "_")] = me.args["parent"];
+		args["parent_" + me.doctype.toLowerCase().replace(/ /g, "_").replace(/-/g, "_")] =
+			me.args["parent"];
 
 		d.set_value("is_group", 0);
 		d.set_values(args);

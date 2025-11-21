@@ -3,9 +3,8 @@
 
 import base64
 import json
-from typing import TYPE_CHECKING, Callable
-
-import jwt
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import frappe
 import frappe.utils
@@ -116,16 +115,14 @@ def login_via_oauth2(provider: str, code: str, state: str, decoder: Callable | N
 	login_oauth_user(info, provider=provider, state=state)
 
 
-def login_via_oauth2_id_token(
-	provider: str, code: str, state: str, decoder: Callable | None = None
-):
+def login_via_oauth2_id_token(provider: str, code: str, state: str, decoder: Callable | None = None):
 	info = get_info_via_oauth(provider, code, decoder, id_token=True)
 	login_oauth_user(info, provider=provider, state=state)
 
 
-def get_info_via_oauth(
-	provider: str, code: str, decoder: Callable | None = None, id_token: bool = False
-):
+def get_info_via_oauth(provider: str, code: str, decoder: Callable | None = None, id_token: bool = False):
+	import jwt
+
 	flow = get_oauth2_flow(provider)
 	oauth2_providers = get_oauth2_providers()
 
@@ -154,7 +151,7 @@ def get_info_via_oauth(
 
 		if provider == "github" and not info.get("email"):
 			emails = session.get("/user/emails", params=api_endpoint_args).json()
-			email_dict = list(filter(lambda x: x.get("primary"), emails))[0]
+			email_dict = next(filter(lambda x: x.get("primary"), emails))
 			info["email"] = email_dict.get("email")
 
 	if not (info.get("email_verified") or info.get("email")):
@@ -211,9 +208,7 @@ def login_oauth_user(
 
 	if frappe.utils.cint(generate_login_token):
 		login_token = frappe.generate_hash(length=32)
-		frappe.cache().set_value(
-			f"login_token:{login_token}", frappe.local.session.sid, expires_in_sec=120
-		)
+		frappe.cache().set_value(f"login_token:{login_token}", frappe.local.session.sid, expires_in_sec=120)
 
 		frappe.response["login_token"] = login_token
 
@@ -311,9 +306,7 @@ def get_email(data: dict) -> str:
 	return data.get("email") or data.get("upn") or data.get("unique_name")
 
 
-def redirect_post_login(
-	desk_user: bool, redirect_to: str | None = None, provider: str | None = None
-):
+def redirect_post_login(desk_user: bool, redirect_to: str | None = None, provider: str | None = None):
 	frappe.local.response["type"] = "redirect"
 
 	if not redirect_to:

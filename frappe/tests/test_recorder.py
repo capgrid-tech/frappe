@@ -1,10 +1,12 @@
 # Copyright (c) 2019, Frappe Technologies Pvt. Ltd. and Contributors
 # License: MIT. See LICENSE
 
+
 import sqlparse
 
 import frappe
 import frappe.recorder
+from frappe.recorder import normalize_query
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import set_request
 from frappe.website.serve import get_response_content
@@ -18,19 +20,23 @@ class TestRecorder(FrappeTestCase):
 		frappe.recorder.start()
 		frappe.recorder.record()
 
-	def test_start(self):
+	def stop_recording(self):
 		frappe.recorder.dump()
+		frappe.recorder.stop()
+
+	def test_start(self):
+		self.stop_recording()
 		requests = frappe.recorder.get()
 		self.assertEqual(len(requests), 1)
 
 	def test_do_not_record(self):
 		frappe.recorder.do_not_record(frappe.get_all)("DocType")
-		frappe.recorder.dump()
+		self.stop_recording()
 		requests = frappe.recorder.get()
 		self.assertEqual(len(requests), 0)
 
 	def test_get(self):
-		frappe.recorder.dump()
+		self.stop_recording()
 
 		requests = frappe.recorder.get()
 		self.assertEqual(len(requests), 1)
@@ -39,7 +45,7 @@ class TestRecorder(FrappeTestCase):
 		self.assertTrue(request)
 
 	def test_delete(self):
-		frappe.recorder.dump()
+		self.stop_recording()
 
 		requests = frappe.recorder.get()
 		self.assertEqual(len(requests), 1)
@@ -50,7 +56,7 @@ class TestRecorder(FrappeTestCase):
 		self.assertEqual(len(requests), 0)
 
 	def test_record_without_sql_queries(self):
-		frappe.recorder.dump()
+		self.stop_recording()
 
 		requests = frappe.recorder.get()
 		request = frappe.recorder.get(requests[0]["uuid"])
@@ -59,7 +65,7 @@ class TestRecorder(FrappeTestCase):
 
 	def test_record_with_sql_queries(self):
 		frappe.get_all("DocType")
-		frappe.recorder.dump()
+		self.stop_recording()
 
 		requests = frappe.recorder.get()
 		request = frappe.recorder.get(requests[0]["uuid"])
@@ -69,7 +75,7 @@ class TestRecorder(FrappeTestCase):
 	def test_explain(self):
 		frappe.db.sql("SELECT * FROM tabDocType")
 		frappe.db.sql("COMMIT")
-		frappe.recorder.dump()
+		self.stop_recording()
 
 		requests = frappe.recorder.get()
 		request = frappe.recorder.get(requests[0]["uuid"])
@@ -88,16 +94,19 @@ class TestRecorder(FrappeTestCase):
 		for query in queries:
 			frappe.db.sql(query[sql_dialect])
 
-		frappe.recorder.dump()
+		self.stop_recording()
 
 		requests = frappe.recorder.get()
 		request = frappe.recorder.get(requests[0]["uuid"])
 
 		self.assertEqual(len(request["calls"]), len(queries))
 
-		for query, call in zip(queries, request["calls"]):
+		for query, call in zip(queries, request["calls"], strict=False):
 			self.assertEqual(
-				call["query"], sqlparse.format(query[sql_dialect].strip(), keyword_case="upper", reindent=True)
+				call["query"],
+				sqlparse.format(
+					query[sql_dialect].strip(), keyword_case="upper", reindent=True, strip_comments=True
+				),
 			)
 
 	def test_duplicate_queries(self):
@@ -112,12 +121,12 @@ class TestRecorder(FrappeTestCase):
 		for query in queries:
 			frappe.db.sql(query[0])
 
-		frappe.recorder.dump()
+		self.stop_recording()
 
 		requests = frappe.recorder.get()
 		request = frappe.recorder.get(requests[0]["uuid"])
 
-		for query, call in zip(queries, request["calls"]):
+		for query, call in zip(queries, request["calls"], strict=False):
 			self.assertEqual(call["exact_copies"], query[1])
 
 	def test_error_page_rendering(self):
@@ -135,3 +144,18 @@ class TestRecorderDeco(FrappeTestCase):
 
 		test()
 		self.assertTrue(frappe.recorder.get())
+
+
+class TestQueryNormalization(FrappeTestCase):
+	def test_query_normalization(self):
+		test_cases = {
+			"select * from user where name = 'x'": "select * from user where name = ?",
+			"select * from user where a > 5": "select * from user where a > ?",
+			"select * from `user` where a > 5": "select * from `user` where a > ?",
+			"select `name` from `user`": "select `name` from `user`",
+			"select `name` from `user` limit 10": "select `name` from `user` limit ?",
+			"select `name` from `user` where name in ('a', 'b', 'c')": "select `name` from `user` where name in (?)",
+		}
+
+		for query, normalized in test_cases.items():
+			self.assertEqual(normalize_query(query), normalized)

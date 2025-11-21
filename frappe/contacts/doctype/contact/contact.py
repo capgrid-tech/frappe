@@ -12,17 +12,15 @@ from frappe.utils import cstr, has_gravatar
 class Contact(Document):
 	def autoname(self):
 		# concat first and last name
-		self.name = " ".join(
-			filter(None, [cstr(self.get(f)).strip() for f in ["first_name", "last_name"]])
-		)
-
-		if frappe.db.exists("Contact", self.name):
-			self.name = append_number_if_name_exists("Contact", self.name)
+		self.name = " ".join(filter(None, [cstr(self.get(f)).strip() for f in ["first_name", "last_name"]]))
 
 		# concat party name if reqd
 		for link in self.links:
 			self.name = self.name + "-" + link.link_name.strip()
 			break
+
+		if frappe.db.exists("Contact", self.name):
+			self.name = append_number_if_name_exists("Contact", self.name)
 
 	def validate(self):
 		self.set_primary_email()
@@ -93,6 +91,9 @@ class Contact(Document):
 		if len([email.email_id for email in self.email_ids if email.is_primary]) > 1:
 			frappe.throw(_("Only one {0} can be set as primary.").format(frappe.bold("Email ID")))
 
+		if len(self.email_ids) == 1:
+			self.email_ids[0].is_primary = 1
+
 		primary_email_exists = False
 		for d in self.email_ids:
 			if d.is_primary == 1:
@@ -140,7 +141,7 @@ def get_default_contact(doctype, name):
 		where
 			dl.link_doctype=%s and
 			dl.link_name=%s and
-			dl.parenttype = 'Contact' """,
+			dl.parenttype = 'Contact'""",
 		(doctype, name),
 		as_dict=True,
 	)
@@ -155,31 +156,33 @@ def get_default_contact(doctype, name):
 
 
 @frappe.whitelist()
-def invite_user(contact):
+def invite_user(contact: str):
 	contact = frappe.get_doc("Contact", contact)
+	contact.check_permission()
 
 	if not contact.email_id:
 		frappe.throw(_("Please set Email Address"))
 
-	if contact.has_permission("write"):
-		user = frappe.get_doc(
-			{
-				"doctype": "User",
-				"first_name": contact.first_name,
-				"last_name": contact.last_name,
-				"email": contact.email_id,
-				"user_type": "Website User",
-				"send_welcome_email": 1,
-			}
-		).insert(ignore_permissions=True)
+	user = frappe.get_doc(
+		{
+			"doctype": "User",
+			"first_name": contact.first_name,
+			"last_name": contact.last_name,
+			"email": contact.email_id,
+			"user_type": "Website User",
+			"send_welcome_email": 1,
+		}
+	).insert()
 
-		return user.name
+	return user.name
 
 
 @frappe.whitelist()
 def get_contact_details(contact):
 	contact = frappe.get_doc("Contact", contact)
-	out = {
+	contact.check_permission()
+
+	return {
 		"contact_person": contact.get("name"),
 		"contact_display": " ".join(
 			filter(None, [contact.get("salutation"), contact.get("first_name"), contact.get("last_name")])
@@ -190,7 +193,6 @@ def get_contact_details(contact):
 		"contact_designation": contact.get("designation"),
 		"contact_department": contact.get("department"),
 	}
-	return out
 
 
 def update_contact(doc, method):
@@ -211,17 +213,14 @@ def contact_query(doctype, txt, searchfield, start, page_len, filters):
 	from frappe.desk.reportview import get_match_cond
 
 	doctype = "Contact"
-	if (
-		not frappe.get_meta(doctype).get_field(searchfield)
-		and searchfield not in frappe.db.DEFAULT_COLUMNS
-	):
+	if not frappe.get_meta(doctype).get_field(searchfield) and searchfield not in frappe.db.DEFAULT_COLUMNS:
 		return []
 
 	link_doctype = filters.pop("link_doctype")
 	link_name = filters.pop("link_name")
 
 	return frappe.db.sql(
-		"""select
+		f"""select
 			`tabContact`.name, `tabContact`.first_name, `tabContact`.last_name
 		from
 			`tabContact`, `tabDynamic Link`
@@ -230,14 +229,12 @@ def contact_query(doctype, txt, searchfield, start, page_len, filters):
 			`tabDynamic Link`.parenttype = 'Contact' and
 			`tabDynamic Link`.link_doctype = %(link_doctype)s and
 			`tabDynamic Link`.link_name = %(link_name)s and
-			`tabContact`.`{key}` like %(txt)s
-			{mcond}
+			`tabContact`.`{searchfield}` like %(txt)s
+			{get_match_cond(doctype)}
 		order by
 			if(locate(%(_txt)s, `tabContact`.name), locate(%(_txt)s, `tabContact`.name), 99999),
 			`tabContact`.idx desc, `tabContact`.name
-		limit %(start)s, %(page_len)s """.format(
-			mcond=get_match_cond(doctype), key=searchfield
-		),
+		limit %(start)s, %(page_len)s """,
 		{
 			"txt": "%" + txt + "%",
 			"_txt": txt.replace("%", ""),
@@ -254,8 +251,7 @@ def address_query(links):
 	import json
 
 	links = [
-		{"link_doctype": d.get("link_doctype"), "link_name": d.get("link_name")}
-		for d in json.loads(links)
+		{"link_doctype": d.get("link_doctype"), "link_name": d.get("link_name")} for d in json.loads(links)
 	]
 	result = []
 
@@ -297,11 +293,13 @@ def get_contact_with_phone_number(number):
 	return contacts[0].parent if contacts else None
 
 
-def get_contact_name(email_id):
-	contact = frappe.get_all(
-		"Contact Email", filters={"email_id": email_id}, fields=["parent"], limit=1
-	)
-	return contact[0].parent if contact else None
+def get_contact_name(email_id: str) -> str | None:
+	"""Return the contact ID for the given email ID."""
+	for contact_id in frappe.get_all(
+		"Contact Email", filters={"email_id": email_id, "parenttype": "Contact"}, pluck="parent"
+	):
+		if frappe.db.exists("Contact", contact_id):
+			return contact_id
 
 
 def get_contacts_linking_to(doctype, docname, fields=None):

@@ -4,8 +4,14 @@ import frappe
 from frappe import _
 from frappe.utils import cint, cstr, flt
 
+# This matches anything that isn't [a-zA-Z0-9_]
 SPECIAL_CHAR_PATTERN = re.compile(r"[\W]", flags=re.UNICODE)
+
 VARCHAR_CAST_PATTERN = re.compile(r"varchar\(([\d]+)\)")
+
+CONFIGURABLE_DECIMAL_TYPES = ("Currency", "Float", "Percent")
+DEFAULT_DECIMAL_LENGTH = 21
+DEFAULT_DECIMAL_PRECISION = 9
 
 
 class InvalidColumnName(frappe.ValidationError):
@@ -47,7 +53,7 @@ class DBTable:
 		pass
 
 	def get_column_definitions(self):
-		column_list = [] + frappe.db.DEFAULT_COLUMNS
+		column_list = [*frappe.db.DEFAULT_COLUMNS]
 		ret = []
 		for k in list(self.columns):
 			if k not in column_list:
@@ -123,7 +129,6 @@ class DBTable:
 				)
 
 			if "varchar" in frappe.db.type_map.get(col.fieldtype, ()):
-
 				# validate length range
 				new_length = cint(col.length) or cint(frappe.db.VARCHAR_LEN)
 				if not (1 <= new_length <= 1000):
@@ -142,9 +147,7 @@ class DBTable:
 					try:
 						# check for truncation
 						max_length = frappe.db.sql(
-							"""SELECT MAX(CHAR_LENGTH(`{fieldname}`)) FROM `tab{doctype}`""".format(
-								fieldname=col.fieldname, doctype=self.doctype
-							)
+							f"""SELECT MAX(CHAR_LENGTH(`{col.fieldname}`)) FROM `tab{self.doctype}`"""
 						)
 
 					except frappe.db.InternalError as e:
@@ -174,9 +177,7 @@ class DBTable:
 
 
 class DbColumn:
-	def __init__(
-		self, table, fieldname, fieldtype, length, default, set_index, options, unique, precision
-	):
+	def __init__(self, table, fieldname, fieldtype, length, default, set_index, options, unique, precision):
 		self.table = table
 		self.fieldname = fieldname
 		self.fieldtype = fieldtype
@@ -205,7 +206,6 @@ class DbColumn:
 			self.default
 			and (self.default not in frappe.db.DEFAULT_SHORTCUTS)
 			and not cstr(self.default).startswith(":")
-			and column_def not in ("text", "longtext")
 		):
 			column_def += f" default {frappe.db.escape(self.default)}"
 
@@ -248,7 +248,6 @@ class DbColumn:
 			self.default_changed(current_def)
 			and (self.default not in frappe.db.DEFAULT_SHORTCUTS)
 			and not cstr(self.default).startswith(":")
-			and not (column_type in ["text", "longtext"])
 		):
 			self.table.set_default.append(self)
 
@@ -256,7 +255,7 @@ class DbColumn:
 		if (current_def["index"] and not self.set_index) and column_type not in ("text", "longtext"):
 			self.table.drop_index.append(self)
 
-		elif (not current_def["index"] and self.set_index) and not (column_type in ("text", "longtext")):
+		elif (not current_def["index"] and self.set_index) and column_type not in ("text", "longtext"):
 			self.table.add_index.append(self)
 
 	def default_changed(self, current_def):
@@ -337,10 +336,13 @@ def get_definition(fieldtype, precision=None, length=None):
 	size = d[1] if d[1] else None
 
 	if size:
-		# This check needs to exist for backward compatibility.
-		# Till V13, default size used for float, currency and percent are (18, 6).
-		if fieldtype in ["Float", "Currency", "Percent"] and cint(precision) > 6:
-			size = "21,9"
+		if fieldtype in CONFIGURABLE_DECIMAL_TYPES:
+			width = length if length else DEFAULT_DECIMAL_LENGTH
+			precision_is_set = precision not in (None, "")
+			precision = precision if precision_is_set else DEFAULT_DECIMAL_PRECISION
+			if cint(precision) > cint(width):
+				precision = width
+			size = f"{cint(width)},{cint(precision)}"
 
 		if length:
 			if coltype == "varchar":
@@ -357,16 +359,9 @@ def get_definition(fieldtype, precision=None, length=None):
 	return coltype
 
 
-def add_column(
-	doctype, column_name, fieldtype, precision=None, length=None, default=None, not_null=False
-):
-	if column_name in frappe.db.get_table_columns(doctype):
-		# already exists
-		return
-
+def add_column(doctype, column_name, fieldtype, precision=None, length=None, default=None, not_null=False):
 	frappe.db.commit()
-
-	query = "alter table `tab{}` add column {} {}".format(
+	query = "alter table `tab{}` add column if not exists {} {}".format(
 		doctype,
 		column_name,
 		get_definition(fieldtype, precision, length),

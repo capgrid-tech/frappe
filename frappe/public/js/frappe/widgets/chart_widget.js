@@ -103,7 +103,7 @@ export default class ChartWidget extends Widget {
 				this.action_area.empty();
 				this.prepare_chart_actions();
 
-				if (this.chart_doc.timeseries && this.chart_doc.chart_type !== "Custom") {
+				if (this.chart_doc.timeseries) {
 					this.render_time_series_filters();
 				}
 			}
@@ -596,6 +596,12 @@ export default class ChartWidget extends Widget {
 		if (this.chart_doc.chart_type == "Report" && this.report_result?.chart?.fieldtype) {
 			fieldtype = this.report_result.chart.fieldtype;
 			options = this.report_result.chart.options;
+		}
+
+		if (this.chart_doc.chart_type == "Custom" && this.chart_doc.custom_options) {
+			let chart_options = JSON.parse(this.chart_doc.custom_options);
+			fieldtype = chart_options.fieldtype;
+			options = chart_options.options;
 		}
 
 		chart_args.tooltipOptions = {

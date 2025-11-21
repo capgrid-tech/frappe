@@ -17,6 +17,7 @@ DEFAULT_LOGTYPES_RETENTION = {
 	"Error Snapshot": 30,
 	"Scheduled Job Log": 90,
 	"Route History": 90,
+	"Prepared Report": 30,
 	"Webhook Request Log": 30,
 }
 
@@ -75,9 +76,7 @@ class LogSettings(Document):
 				added_logtypes.add(logtype)
 
 		if added_logtypes:
-			frappe.msgprint(
-				_("Added default log doctypes: {}").format(",".join(added_logtypes)), alert=True
-			)
+			frappe.msgprint(_("Added default log doctypes: {}").format(",".join(added_logtypes)), alert=True)
 
 	def clear_logs(self):
 		"""
@@ -129,7 +128,6 @@ def has_unseen_error_log():
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def get_log_doctypes(doctype, txt, searchfield, start, page_len, filters):
-
 	filters = filters or {}
 
 	filters.extend(

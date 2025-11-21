@@ -29,9 +29,6 @@ def get_context(context):
 	files = [x for x in os.listdir(path) if os.path.isfile(os.path.join(path, x))]
 	backup_limit = get_scheduled_backup_limit()
 
-	if len(files) > backup_limit:
-		cleanup_old_backups(path, files, backup_limit)
-
 	files = [
 		(
 			"/backups/" + _file,
@@ -82,6 +79,8 @@ def delete_downloadable_backups():
 def schedule_files_backup(user_email):
 	from frappe.utils.background_jobs import enqueue, get_jobs
 
+	frappe.only_for("System Manager")
+
 	queued_jobs = get_jobs(site=frappe.local.site, queue="long")
 	method = "frappe.desk.page.backups.backups.backup_files_and_notify_user"
 
@@ -93,9 +92,7 @@ def schedule_files_backup(user_email):
 		)
 		frappe.msgprint(_("Queued for backup. You will receive an email with the download link"))
 	else:
-		frappe.msgprint(
-			_("Backup job is already queued. You will receive an email with the download link")
-		)
+		frappe.msgprint(_("Backup job is already queued. You will receive an email with the download link"))
 
 
 def backup_files_and_notify_user(user_email=None):

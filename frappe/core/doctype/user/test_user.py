@@ -2,11 +2,14 @@
 # License: MIT. See LICENSE
 import json
 import time
+from contextlib import contextmanager
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
 import frappe
 import frappe.exceptions
 from frappe.core.doctype.user.user import (
+	User,
 	handle_password_test_fail,
 	reset_password,
 	sign_up,
@@ -17,7 +20,7 @@ from frappe.core.doctype.user.user import (
 from frappe.desk.notifications import extract_mentions
 from frappe.frappeclient import FrappeClient
 from frappe.model.delete_doc import delete_doc
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests.utils import FrappeTestCase, change_settings
 from frappe.utils import get_url
 
 user_module = frappe.core.doctype.user.user
@@ -32,10 +35,14 @@ class TestUser(FrappeTestCase):
 		frappe.db.set_single_value("System Settings", "password_reset_limit", 3)
 		frappe.set_user("Administrator")
 
+	@staticmethod
+	def reset_password(user) -> str:
+		link = user.reset_password()
+		return parse_qs(urlparse(link).query)["key"][0]
+
 	def test_user_type(self):
-		new_user = frappe.get_doc(
-			dict(doctype="User", email="test-for-type@example.com", first_name="Tester")
-		).insert(ignore_if_duplicate=True)
+		user_id = frappe.generate_hash() + "@example.com"
+		new_user = frappe.get_doc(doctype="User", email=user_id, first_name="Tester").insert()
 		self.assertEqual(new_user.user_type, "Website User")
 
 		# social login userid for frappe
@@ -113,9 +120,7 @@ class TestUser(FrappeTestCase):
 
 		frappe.db.set_single_value("Website Settings", "_test", "_test_val")
 		self.assertEqual(frappe.db.get_value("Website Settings", None, "_test"), "_test_val")
-		self.assertEqual(
-			frappe.db.get_value("Website Settings", "Website Settings", "_test"), "_test_val"
-		)
+		self.assertEqual(frappe.db.get_value("Website Settings", "Website Settings", "_test"), "_test_val")
 
 	def test_high_permlevel_validations(self):
 		user = frappe.get_meta("User")
@@ -192,9 +197,7 @@ class TestUser(FrappeTestCase):
 		# Score 1; should now fail
 		result = test_password_strength("bee2ve")
 		self.assertEqual(result["feedback"]["password_policy_validation_passed"], False)
-		self.assertRaises(
-			frappe.exceptions.ValidationError, handle_password_test_fail, result["feedback"]
-		)
+		self.assertRaises(frappe.exceptions.ValidationError, handle_password_test_fail, result["feedback"])
 		self.assertRaises(
 			frappe.exceptions.ValidationError, handle_password_test_fail, result
 		)  # test backwards compatibility
@@ -273,11 +276,8 @@ class TestUser(FrappeTestCase):
 		"""
 		self.assertListEqual(extract_mentions(comment), ["test@example.com", "test1@example.com"])
 
+	@change_settings("System Settings", commit=True, password_reset_limit=1)
 	def test_rate_limiting_for_reset_password(self):
-		# Allow only one reset request for a day
-		frappe.db.set_single_value("System Settings", "password_reset_limit", 1)
-		frappe.db.commit()
-
 		url = get_url()
 		data = {"cmd": "frappe.core.doctype.user.user.reset_password", "user": "test@test.com"}
 
@@ -289,7 +289,7 @@ class TestUser(FrappeTestCase):
 		res1 = c.session.post(url, data=data, verify=c.verify, headers=c.headers)
 		res2 = c.session.post(url, data=data, verify=c.verify, headers=c.headers)
 		self.assertEqual(res1.status_code, 404)
-		self.assertEqual(res2.status_code, 417)
+		self.assertEqual(res2.status_code, 429)
 
 	def test_user_rename(self):
 		old_name = "test_user_rename@example.com"
@@ -333,9 +333,7 @@ class TestUser(FrappeTestCase):
 		self.assertEqual(frappe.cache().hget("redirect_after_login", random_user), "/welcome")
 
 		# re-register
-		self.assertTupleEqual(
-			sign_up(random_user, random_user_name, "/welcome"), (0, "Already Registered")
-		)
+		self.assertTupleEqual(sign_up(random_user, random_user_name, "/welcome"), (0, "Already Registered"))
 
 		# disabled user
 		user = frappe.get_doc("User", random_user)
@@ -357,6 +355,7 @@ class TestUser(FrappeTestCase):
 				"/signup",
 			)
 
+	@change_settings("System Settings", password_reset_limit=6)
 	def test_reset_password(self):
 		from frappe.auth import CookieManager, LoginManager
 		from frappe.utils import set_request
@@ -367,11 +366,13 @@ class TestUser(FrappeTestCase):
 		set_request(path="/random")
 		frappe.local.cookie_manager = CookieManager()
 		frappe.local.login_manager = LoginManager()
+		# used by rate limiter when calling reset_password
+		frappe.local.request_ip = "127.0.0.69"
 
 		frappe.set_user("testpassword@example.com")
 		test_user = frappe.get_doc("User", "testpassword@example.com")
-		test_user.reset_password()
-		self.assertEqual(update_password(new_password, key=test_user.reset_password_key), "/app")
+		key = self.reset_password(test_user)
+		self.assertEqual(update_password(new_password, key=key), "/app")
 		self.assertEqual(
 			update_password(new_password, key="wrong_key"),
 			"The reset password link has either been used before or is invalid",
@@ -392,9 +393,7 @@ class TestUser(FrappeTestCase):
 		}
 
 		# password strength failure test
-		with patch.object(
-			user_module, "test_password_strength", return_value=password_strength_response
-		):
+		with patch.object(user_module, "test_password_strength", return_value=password_strength_response):
 			self.assertRaisesRegex(
 				frappe.exceptions.ValidationError,
 				"Fix password",
@@ -416,7 +415,9 @@ class TestUser(FrappeTestCase):
 			test_user = frappe.get_doc("User", "test2@example.com")
 			self.assertEqual(reset_password(user="test2@example.com"), None)
 			test_user.reload()
-			self.assertEqual(update_password(new_password, key=test_user.reset_password_key), "/")
+			link = sendmail.call_args_list[0].kwargs["args"]["link"]
+			key = parse_qs(urlparse(link).query)["key"][0]
+			self.assertEqual(update_password(new_password, key=key), "/")
 			update_password(old_password, old_password=new_password)
 			self.assertEqual(
 				json.loads(frappe.message_log[0]).get("message"),
@@ -438,22 +439,45 @@ class TestUser(FrappeTestCase):
 		getdoc("User", "Administrator")
 		doc = frappe.response.docs[0]
 		self.assertListEqual(
-			doc.get("__onload").get("all_modules", []),
-			[m.get("module_name") for m in get_modules_from_all_apps()],
+			sorted(doc.get("__onload").get("all_modules", [])),
+			sorted(m.get("module_name") for m in get_modules_from_all_apps()),
 		)
 
+	@change_settings("System Settings", reset_password_link_expiry_duration=1)
 	def test_reset_password_link_expiry(self):
 		new_password = "new_password"
-		# set the reset password expiry to 1 second
-		frappe.db.set_single_value("System Settings", "reset_password_link_expiry_duration", 1)
 		frappe.set_user("testpassword@example.com")
 		test_user = frappe.get_doc("User", "testpassword@example.com")
-		test_user.reset_password()
-		time.sleep(1)  # sleep for 1 sec to expire the reset link
+		key = self.reset_password(test_user)
+		time.sleep(1)
+
 		self.assertEqual(
-			update_password(new_password, key=test_user.reset_password_key),
+			update_password(new_password, key=key),
 			"The reset password link has been expired",
 		)
+
+
+@contextmanager
+def test_user(
+	*, first_name: str | None = None, email: str | None = None, roles: list[str], commit=False, **kwargs
+):
+	try:
+		first_name = first_name or frappe.generate_hash()
+		email = email or (first_name + "@example.com")
+		user: User = frappe.get_doc(
+			doctype="User",
+			send_welcome_email=0,
+			email=email,
+			first_name=first_name,
+			**kwargs,
+		)
+		user.append_roles(*roles)
+		user.insert()
+		yield user
+		commit and frappe.db.commit()
+	finally:
+		user.delete(force=True, ignore_permissions=True)
+		commit and frappe.db.commit()
 
 
 def delete_contact(user):

@@ -5,10 +5,12 @@ import os
 
 from PIL import Image
 
+import frappe
+
 
 def resize_images(path, maxdim=700):
 	size = (maxdim, maxdim)
-	for basepath, folders, files in os.walk(path):
+	for basepath, _folders, files in os.walk(path):
 		for fname in files:
 			extn = fname.rsplit(".", 1)[1]
 			if extn in ("jpg", "jpeg", "png", "gif"):
@@ -45,25 +47,28 @@ def strip_exif_data(content, content_type):
 	return content
 
 
-def optimize_image(
-	content, content_type, max_width=1920, max_height=1080, optimize=True, quality=85
-):
+def optimize_image(content, content_type, max_width=1920, max_height=1080, optimize=True, quality=85):
 	if content_type == "image/svg+xml":
 		return content
 
-	image = Image.open(io.BytesIO(content))
-	image_format = content_type.split("/")[1]
-	size = max_width, max_height
-	image.thumbnail(size, Image.Resampling.LANCZOS)
+	try:
+		image = Image.open(io.BytesIO(content))
+		exif = image.getexif()
+		image_format = content_type.split("/")[1]
+		size = max_width, max_height
+		image.thumbnail(size, Image.Resampling.LANCZOS)
 
-	output = io.BytesIO()
-	image.save(
-		output,
-		format=image_format,
-		optimize=optimize,
-		quality=quality,
-		save_all=True if image_format == "gif" else None,
-	)
-
-	optimized_content = output.getvalue()
-	return optimized_content if len(optimized_content) < len(content) else content
+		output = io.BytesIO()
+		image.save(
+			output,
+			format=image_format,
+			optimize=optimize,
+			quality=quality,
+			save_all=True if image_format == "gif" else None,
+			exif=exif,
+		)
+		optimized_content = output.getvalue()
+		return optimized_content if len(optimized_content) < len(content) else content
+	except Exception as e:
+		frappe.msgprint(frappe._("Failed to optimize image: {0}").format(str(e)))
+		return content

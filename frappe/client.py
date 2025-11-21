@@ -10,6 +10,7 @@ import frappe.utils
 from frappe import _
 from frappe.desk.reportview import validate_args
 from frappe.model.db_query import check_parent_permission
+from frappe.model.utils import is_virtual_doctype
 from frappe.utils import get_safe_filters
 
 if TYPE_CHECKING:
@@ -27,6 +28,7 @@ def get_list(
 	doctype,
 	fields=None,
 	filters=None,
+	group_by=None,
 	order_by=None,
 	limit_start=None,
 	limit_page_length=20,
@@ -52,6 +54,7 @@ def get_list(
 		fields=fields,
 		filters=filters,
 		or_filters=or_filters,
+		group_by=group_by,
 		order_by=order_by,
 		limit_start=limit_start,
 		limit_page_length=limit_page_length,
@@ -433,6 +436,18 @@ def validate_link(doctype: str, docname: str, fields=None):
 		)
 
 	values = frappe._dict()
+
+	if is_virtual_doctype(doctype):
+		try:
+			frappe.get_doc(doctype, docname)
+			values.name = docname
+		except frappe.DoesNotExistError:
+			frappe.clear_last_message()
+			frappe.msgprint(
+				_("Document {0} {1} does not exist").format(frappe.bold(doctype), frappe.bold(docname)),
+			)
+		return values
+
 	values.name = frappe.db.get_value(doctype, docname, cache=True)
 
 	fields = frappe.parse_json(fields)
@@ -483,9 +498,13 @@ def delete_doc(doctype, name):
 	if frappe.is_table(doctype):
 		values = frappe.db.get_value(doctype, name, ["parenttype", "parent", "parentfield"])
 		if not values:
-			raise frappe.DoesNotExistError
+			raise frappe.DoesNotExistError(doctype=doctype)
+
 		parenttype, parent, parentfield = values
 		parent = frappe.get_doc(parenttype, parent)
+		if not parent.has_permission("write"):
+			raise frappe.DoesNotExistError(doctype=doctype)
+
 		for row in parent.get(parentfield):
 			if row.name == name:
 				parent.remove(row)

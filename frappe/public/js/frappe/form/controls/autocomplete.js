@@ -84,39 +84,18 @@ frappe.ui.form.ControlAutocomplete = class ControlAutoComplete extends frappe.ui
 		};
 	}
 
-	init_option_cache() {
-		if (!this.$input.cache) {
-			this.$input.cache = {};
-		}
-		if (!this.$input.cache[this.doctype]) {
-			this.$input.cache[this.doctype] = {};
-		}
-		if (!this.$input.cache[this.doctype][this.df.fieldname]) {
-			this.$input.cache[this.doctype][this.df.fieldname] = {};
-		}
-	}
-
 	setup_awesomplete() {
 		this.awesomplete = new Awesomplete(this.input, this.get_awesomplete_settings());
 
 		$(this.input_area).find(".awesomplete ul").css("min-width", "100%");
 
-		this.init_option_cache();
-
-		this.$input.on(
-			"input",
-			frappe.utils.debounce((e) => {
-				const cached_options =
-					this.$input.cache[this.doctype][this.df.fieldname][e.target.value];
-				if (cached_options && cached_options.length) {
-					this.set_data(cached_options);
-				} else if (this.get_query || this.df.get_query) {
-					this.execute_query_if_exists(e.target.value);
-				} else {
-					this.awesomplete.list = this.get_data();
-				}
-			}, 500)
-		);
+		this.$input.on("input", (e) => {
+			if (this.get_query || this.df.get_query) {
+				this.execute_query_if_exists(e.target.value);
+			} else {
+				this.awesomplete.list = this.get_data();
+			}
+		});
 
 		this.$input.on("focus", () => {
 			if (!this.$input.val()) {
@@ -174,6 +153,15 @@ frappe.ui.form.ControlAutocomplete = class ControlAutoComplete extends frappe.ui
 		if (typeof options[0] === "string") {
 			options = options.map((o) => ({ label: o, value: o }));
 		}
+
+		options = options.map((o) => {
+			if (typeof o !== "string") {
+				o.label = __(cstr(o.label));
+				o.value = cstr(o.value);
+			}
+			return o;
+		});
+
 		return options;
 	}
 
@@ -235,7 +223,6 @@ frappe.ui.form.ControlAutocomplete = class ControlAutoComplete extends frappe.ui
 					if (!this.$input.is(":focus")) {
 						return;
 					}
-					this.$input.cache[this.doctype][this.df.fieldname][term] = message;
 					this.set_data(message);
 				},
 			});

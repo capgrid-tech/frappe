@@ -24,7 +24,7 @@ class DbManager:
 	def create_database(self, target):
 		if target in self.get_database_list():
 			self.drop_database(target)
-		self.db.sql(f"CREATE DATABASE `{target}`")
+		self.db.sql(f"CREATE DATABASE `{target}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
 
 	def drop_database(self, target):
 		self.db.sql_ddl(f"DROP DATABASE IF EXISTS `{target}`")
@@ -59,11 +59,9 @@ class DbManager:
 		pv = find_executable("pv")
 
 		if pv:
-			pipe = f"{pv} {source} |"
-			source = ""
+			pipe = f"{pv} {source} | " + r"sed '/\/\*M\{0,1\}!999999\\- enable the sandbox mode \*\//d' |"
 		else:
-			pipe = ""
-			source = f"< {source}"
+			pipe = f"cat {source} | " + r"sed '/\/\*M\{0,1\}!999999\\- enable the sandbox mode \*\//d' |"
 
 		if pipe:
 			print("Restoring Database file...")
@@ -71,15 +69,17 @@ class DbManager:
 		command = (
 			"{pipe} mysql -u {user} -p{password} -h{host} "
 			+ ("-P{port}" if frappe.db.port else "")
-			+ " {target} {source}"
+			+ " {target}"
 		)
+
 		command = command.format(
 			pipe=pipe,
 			user=esc(user),
 			password=esc(password),
 			host=esc(frappe.db.host),
 			target=esc(target),
-			source=source,
 			port=frappe.db.port,
 		)
+
 		os.system(command)
+		frappe.cache().delete_keys("")  # Delete all keys associated with this site.

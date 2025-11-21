@@ -112,8 +112,7 @@
    "label": "HTML",
    "oldfieldname": "html",
    "oldfieldtype": "Text Editor",
-   "options": "HTML",
-   "permlevel": 1
+   "options": "Jinja"
   },
   {
    "depends_on": "raw_printing",
@@ -121,7 +120,7 @@
    "fieldname": "raw_commands",
    "fieldtype": "Code",
    "label": "Raw Commands",
-   "permlevel": 1
+   "options": "Jinja"
   },
   {
    "depends_on": "eval:!doc.custom_format",
@@ -262,7 +261,7 @@
  "idx": 1,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2023-07-21 12:35:30.755371",
+ "modified": "2023-12-12 19:59:37.133301",
  "modified_by": "Administrator",
  "module": "Printing",
  "name": "Print Format",

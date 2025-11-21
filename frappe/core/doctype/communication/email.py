@@ -2,6 +2,7 @@
 # License: MIT. See LICENSE
 
 import json
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 import frappe
@@ -36,7 +37,7 @@ def make(
 	send_email=False,
 	print_html=None,
 	print_format=None,
-	attachments="[]",
+	attachments=None,
 	send_me_a_copy=False,
 	cc=None,
 	bcc=None,
@@ -44,6 +45,7 @@ def make(
 	print_letterhead=True,
 	email_template=None,
 	communication_type=None,
+	now=False,
 	**kwargs,
 ) -> dict[str, str]:
 	"""Make a new communication. Checks for email permissions for specified Document.
@@ -59,7 +61,7 @@ def make(
 	:param send_email: Send via email (default **False**).
 	:param print_html: HTML Print format to be sent as attachment.
 	:param print_format: Print Format name of parent document to be sent as attachment.
-	:param attachments: List of attachments as list of files or JSON string.
+	:param attachments: List of File names or dicts with keys "fname" and "fcontent"
 	:param send_me_a_copy: Send a copy to the sender (default **False**).
 	:param email_template: Template which is used to compose mail .
 	"""
@@ -72,8 +74,8 @@ def make(
 			category=DeprecationWarning,
 		)
 
-	if doctype and name and not frappe.has_permission(doctype=doctype, ptype="email", doc=name):
-		raise frappe.PermissionError(f"You are not allowed to send emails related to: {doctype} {name}")
+	if doctype and name:
+		frappe.has_permission(doctype, doc=name, ptype="email", throw=True)
 
 	return _make(
 		doctype=doctype,
@@ -97,6 +99,7 @@ def make(
 		email_template=email_template,
 		communication_type=communication_type,
 		add_signature=False,
+		now=now,
 	)
 
 
@@ -113,7 +116,7 @@ def _make(
 	send_email=False,
 	print_html=None,
 	print_format=None,
-	attachments="[]",
+	attachments=None,
 	send_me_a_copy=False,
 	cc=None,
 	bcc=None,
@@ -122,6 +125,7 @@ def _make(
 	email_template=None,
 	communication_type=None,
 	add_signature=True,
+	now=False,
 ) -> dict[str, str]:
 	"""Internal method to make a new communication that ignores Permission checks."""
 
@@ -174,6 +178,7 @@ def _make(
 			print_format=print_format,
 			send_me_a_copy=send_me_a_copy,
 			print_letterhead=print_letterhead,
+			now=now,
 		)
 
 	emails_not_sent_to = comm.exclude_emails_list(include_sender=send_me_a_copy)
@@ -217,30 +222,45 @@ def set_incoming_outgoing_accounts(doc):
 		doc.db_set("email_account", doc.outgoing_email_account.name)
 
 
-def add_attachments(name, attachments):
-	"""Add attachments to the given Communication"""
+def add_attachments(name: str, attachments: Iterable[str | dict]) -> None:
+	"""Add attachments to the given Communication
+
+	:param name: Communication name
+	:param attachments: File names or dicts with keys "fname" and "fcontent"
+	"""
 	# loop through attachments
 	for a in attachments:
 		if isinstance(a, str):
-			attach = frappe.db.get_value(
-				"File", {"name": a}, ["file_name", "file_url", "is_private"], as_dict=1
-			)
-			# save attachments to new doc
-			_file = frappe.get_doc(
-				{
-					"doctype": "File",
-					"file_url": attach.file_url,
-					"attached_to_doctype": "Communication",
-					"attached_to_name": name,
-					"folder": "Home/Attachments",
-					"is_private": attach.is_private,
-				}
-			)
-			_file.save(ignore_permissions=True)
+			attach = frappe.db.get_value("File", {"name": a}, ["file_url", "is_private"], as_dict=1)
+			file_args = {
+				"file_url": attach.file_url,
+				"is_private": attach.is_private,
+			}
+		elif isinstance(a, dict) and "fcontent" in a and "fname" in a:
+			# dict returned by frappe.attach_print()
+			file_args = {
+				"file_name": a["fname"],
+				"content": a["fcontent"],
+				"is_private": 1,
+			}
+		else:
+			continue
+
+		file_args.update(
+			{
+				"attached_to_doctype": "Communication",
+				"attached_to_name": name,
+				"folder": "Home/Attachments",
+			}
+		)
+
+		_file = frappe.new_doc("File")
+		_file.update(file_args)
+		_file.save(ignore_permissions=True)
 
 
 @frappe.whitelist(allow_guest=True, methods=("GET",))
-def mark_email_as_seen(name: str = None):
+def mark_email_as_seen(name: str | None = None):
 	try:
 		update_communication_as_read(name)
 		frappe.db.commit()  # nosemgrep: this will be called in a GET request

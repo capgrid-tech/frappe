@@ -1,4 +1,5 @@
 import os
+from io import BytesIO
 
 from PyPDF2 import PdfWriter
 
@@ -6,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.core.doctype.access_log.access_log import make_access_log
 from frappe.translate import print_language
+from frappe.utils.deprecations import deprecated
 from frappe.utils.pdf import get_pdf
 
 no_cache = 1
@@ -17,7 +19,7 @@ from frappe.www.printview import validate_print_permission
 
 
 @frappe.whitelist()
-def download_multi_pdf(doctype, name, format=None, no_letterhead=False, options=None):
+def download_multi_pdf(doctype, name, format=None, no_letterhead=False, letterhead=None, options=None):
 	"""
 	Concatenate multiple docs as PDF .
 
@@ -59,7 +61,7 @@ def download_multi_pdf(doctype, name, format=None, no_letterhead=False, options=
 
 	import json
 
-	output = PdfWriter()
+	pdf_writer = PdfWriter()
 
 	if isinstance(options, str):
 		options = json.loads(options)
@@ -68,14 +70,15 @@ def download_multi_pdf(doctype, name, format=None, no_letterhead=False, options=
 		result = json.loads(name)
 
 		# Concatenating pdf files
-		for i, ss in enumerate(result):
-			output = frappe.get_print(
+		for _i, ss in enumerate(result):
+			pdf_writer = frappe.get_print(
 				doctype,
 				ss,
 				format,
 				as_pdf=True,
-				output=output,
+				output=pdf_writer,
 				no_letterhead=no_letterhead,
+				letterhead=letterhead,
 				pdf_options=options,
 			)
 		frappe.local.response.filename = "{doctype}.pdf".format(
@@ -85,13 +88,14 @@ def download_multi_pdf(doctype, name, format=None, no_letterhead=False, options=
 		for doctype_name in doctype:
 			for doc_name in doctype[doctype_name]:
 				try:
-					output = frappe.get_print(
+					pdf_writer = frappe.get_print(
 						doctype_name,
 						doc_name,
 						format,
 						as_pdf=True,
-						output=output,
+						output=pdf_writer,
 						no_letterhead=no_letterhead,
+						letterhead=letterhead,
 						pdf_options=options,
 					)
 				except Exception:
@@ -103,24 +107,23 @@ def download_multi_pdf(doctype, name, format=None, no_letterhead=False, options=
 					)
 		frappe.local.response.filename = f"{name}.pdf"
 
-	frappe.local.response.filecontent = read_multi_pdf(output)
-	frappe.local.response.type = "download"
+	with BytesIO() as merged_pdf:
+		pdf_writer.write(merged_pdf)
+		frappe.local.response.filecontent = merged_pdf.getvalue()
+
+	frappe.local.response.type = "pdf"
 
 
-def read_multi_pdf(output):
-	# Get the content of the merged pdf files
-	fname = os.path.join("/tmp", f"frappe-pdf-{frappe.generate_hash()}.pdf")
-	output.write(open(fname, "wb"))
-
-	with open(fname, "rb") as fileobj:
-		filedata = fileobj.read()
-
-	return filedata
+@deprecated
+def read_multi_pdf(output: PdfWriter) -> bytes:
+	with BytesIO() as merged_pdf:
+		output.write(merged_pdf)
+		return merged_pdf.getvalue()
 
 
 @frappe.whitelist(allow_guest=True)
 def download_pdf(
-	doctype, name, format=None, doc=None, no_letterhead=0, language=None, letterhead=None
+	doctype: str, name: str, format=None, doc=None, no_letterhead=0, language=None, letterhead=None
 ):
 	doc = doc or frappe.get_doc(doctype, name)
 	validate_print_permission(doc)
@@ -130,9 +133,7 @@ def download_pdf(
 			doctype, name, format, doc=doc, as_pdf=True, letterhead=letterhead, no_letterhead=no_letterhead
 		)
 
-	frappe.local.response.filename = "{name}.pdf".format(
-		name=name.replace(" ", "-").replace("/", "-")
-	)
+	frappe.local.response.filename = "{name}.pdf".format(name=name.replace(" ", "-").replace("/", "-"))
 	frappe.local.response.filecontent = pdf_file
 	frappe.local.response.type = "pdf"
 
