@@ -155,7 +155,7 @@
    "hide_days": 1,
    "hide_seconds": 1,
    "label": "Service",
-   "options": "\nGMail\nSendgrid\nSparkPost\nYahoo Mail\nOutlook.com\nYandex.Mail"
+   "options": "\nGMail\nSendgrid\nSparkPost\nYahoo Mail\nOutlook.com\nYandex.Mail\nSMTP"
   },
   {
    "fieldname": "mailbox_settings",
@@ -616,7 +616,7 @@
  "icon": "fa fa-inbox",
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2022-12-28 14:56:18.754804",
+ "modified": "2026-01-12 18:37:41.793888",
  "modified_by": "Administrator",
  "module": "Email",
  "name": "Email Account",
