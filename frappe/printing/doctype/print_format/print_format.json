@@ -106,7 +106,6 @@
    "label": "Raw Printing"
   },
   {
-   "allow_on_submit": 1,
    "depends_on": "eval:!doc.raw_printing",
    "fieldname": "html",
    "fieldtype": "Code",
@@ -263,7 +262,7 @@
  "idx": 1,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-17 17:57:40.027808",
+ "modified": "2026-06-01 16:19:25.632419",
  "modified_by": "Administrator",
  "module": "Printing",
  "name": "Print Format",
